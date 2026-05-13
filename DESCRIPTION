@@ -1,0 +1,52 @@
+Package: monpwr
+Title: Conditional, Prospective, and Hybrid Power Analysis for Monitoring Programme Design
+Version: 0.2.0.9000
+Authors@R:
+    person("Ollie", "Gansell", email = "ogansell@doc.govt.nz", role = c("aut", "cre"))
+Description: Evaluates statistical power and precision for monitoring programme
+    design scenarios. Supports three simulation modes: conditional (plots
+    initialised from their existing visit history and BLUP, so the existing
+    temporal record contributes to power), prospective (from-scratch, for
+    evaluating new designs), and hybrid (a mixture of legacy plots with existing
+    records and new plots with no prior visits, each initialised appropriately).
+    A standardised parameter-extraction layer (extract_params) dispatches on the
+    fitted model class, supporting glmmTMB and lme4 model families out of the
+    box; user-supplied extractors and initialisation functions allow any model
+    family to be used. Reporting scales are fully user-defined through a named
+    list of grouping columns, making the package applicable to any monitoring
+    context regardless of response variable, covariate structure, or grouping
+    taxonomy. The simulation engine, outer loop, MDC derivation, precision
+    estimation, and plotting functions are generic and model-agnostic.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Depends:
+    R (>= 4.1.0)
+Imports:
+    dplyr (>= 1.1.0),
+    tidyr (>= 1.3.0),
+    purrr (>= 1.0.0),
+    furrr (>= 0.3.0),
+    future (>= 1.33.0),
+    parallelly (>= 1.36.0),
+    glmmTMB (>= 1.1.8),
+    lme4 (>= 1.1-34),
+    ggplot2 (>= 3.4.0),
+    scales,
+    rlang,
+    cli,
+    tibble
+Suggests:
+    sf (>= 1.0-0),
+    spsurvey (>= 5.0.0),
+    patchwork,
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    withr,
+    tibble
+VignetteBuilder: knitr
+URL: https://github.com/ogansell/monpwr
+BugReports: https://github.com/ogansell/monpwr/issues
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0

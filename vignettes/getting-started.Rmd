@@ -1,0 +1,233 @@
+---
+title: "Getting started with monpwr"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with monpwr}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE   # set to TRUE once real data objects are available
+)
+```
+
+## Overview
+
+`monpwr` evaluates statistical power and precision for biodiversity monitoring
+programme design scenarios.  It supports two complementary simulation modes:
+
+- **Conditional** — plots are initialised at their observed visit history and
+  BLUP from a fitted model. Future visits are projected forward, so the
+  existing temporal record contributes to power. This is the right tool when
+  you already have monitoring data and are deciding which plots to continue
+  visiting.
+
+- **Prospective** — plots are initialised from scratch using model parameters
+  only (no existing record). Equivalent to `simr`-style analysis. Use this
+  when evaluating a brand-new design or comparing "what power would we have
+  had if we'd used design X from the start".
+
+Both modes work with any model that `extract_params()` supports — currently
+`glmmTMB` and `lme4` model objects.
+
+---
+
+## 1. Fit your model
+
+```{r fit}
+library(monpwr)
+library(glmmTMB)
+
+# Example: hurdle model for pellet count data
+# Replace with your own model and dataset
+fit <- glmmTMB(
+  count ~ visit_num + offset(log_effort) + (1 | plotid_model),
+  ziformula = ~ (1 | plotid_model),
+  family    = truncated_nbinom2,
+  data      = long_model   # your data frame — must be a plain data.frame
+)
+```
+
+---
+
+## 2. Extract standardised parameters
+
+`extract_params()` dispatches on the model class and returns a `monpwr_params`
+object containing everything the simulation engine needs.
+
+```{r extract}
+# data must be a plain data.frame — call as.data.frame() first if needed
+long_model <- as.data.frame(long_model)
+
+ref <- extract_params(fit, data = long_model)
+ref
+```
+
+The returned object has a fixed structure regardless of model family, so all
+downstream functions are model-agnostic.
+
+---
+
+## 3. Define design scenarios
+
+Each scenario specifies a remeasurement interval and a `site_selector` —
+a function that takes your plot-metadata data frame and returns a vector of
+plot IDs to retain.
+
+```{r scenarios}
+scenarios <- list(
+
+  baseline = scenario(
+    label         = "Full grid, 5-yr",
+    remeasure_yrs = 5,
+    site_selector = function(sp) unique(sp$Place)
+  ),
+
+  coarse = scenario(
+    label         = "Coarse grid, 5-yr",
+    remeasure_yrs = 5,
+    site_selector = function(sp) sp$Place[sp$in_coarse_grid]
+  ),
+
+  extended = scenario(
+    label         = "Full grid, 10-yr",
+    remeasure_yrs = 10,
+    site_selector = function(sp) unique(sp$Place)
+  )
+)
+```
+
+---
+
+## 4. Run simulations
+
+### Conditional mode (recommended when you have existing data)
+
+```{r run-conditional}
+results <- run_power_sim(
+  ref_params       = ref,
+  scenarios        = scenarios,
+  plot_metadata    = fpi_spatial,   # one row per plot with Place, Park_type, etc.
+  mode             = "conditional",
+  data             = long_model,    # required for conditional mode
+  effect_sizes_pct = c(10, 20, 30),
+  horizons         = c(10, 20),
+  n_iter           = 200,
+  alpha            = 0.10,
+  scales           = c("National", "Park type"),
+  park_type_var    = "Park_type"
+)
+```
+
+### Prospective mode (from-scratch comparison)
+
+```{r run-prospective}
+results_p <- run_power_sim(
+  ref_params       = ref,
+  scenarios        = scenarios,
+  plot_metadata    = fpi_spatial,
+  mode             = "prospective",  # no `data` argument needed
+  effect_sizes_pct = c(10, 20, 30),
+  horizons         = c(10, 20),
+  n_iter           = 200
+)
+```
+
+---
+
+## 5. Summarise and plot
+
+```{r summarise}
+# Minimum detectable change
+mdc <- compute_mdc(results, power_target = 0.80)
+
+# Power curve
+plot_power(results, scale_filter = "National")
+
+# MDC heatmap
+plot_mdc(mdc, scale_filter = "National")
+
+# Precision (CV) of state estimates
+precision <- run_precision(scenarios, data = long_model,
+                           plot_metadata = fpi_spatial)
+plot_cv(precision, scale_filter = "National")
+```
+
+---
+
+## 6. Custom model families
+
+If your model is not `glmmTMB` or `lme4`, implement an `extract_params` S3
+method for your model class:
+
+```{r custom-extractor}
+extract_params.my_model_class <- function(fit, data,
+                                          visit_num_var = "visit_num",
+                                          plotid_var    = "plotid_model",
+                                          place_var     = "Place",
+                                          ...) {
+  # Extract parameters from your model
+  # ...
+
+  # Return a list with class "monpwr_params"
+  # Required fields: beta_visit, beta_gap_cond, beta_gap_zi, disp_par,
+  #                  sigma_cond, sigma_zi, visit_gap_med, family,
+  #                  visit_num_var, plotid_var, place_var, plot_state
+  structure(
+    list(
+      beta_visit    = ...,
+      beta_gap_cond = 0,
+      beta_gap_zi   = 0,
+      disp_par      = 1,
+      sigma_cond    = ...,
+      sigma_zi      = 0,
+      visit_gap_med = median(data$visit_gap, na.rm = TRUE),
+      family        = "poisson",   # or whichever family string matches
+      visit_num_var = visit_num_var,
+      plotid_var    = plotid_var,
+      place_var     = place_var,
+      plot_state    = ...          # data.frame: Place, plotid_model, visit_num,
+                                   #             eta_last_cond, eta_last_zi,
+                                   #             blup_cond, blup_zi
+    ),
+    class = "monpwr_params"
+  )
+}
+```
+
+---
+
+## 7. Custom prospective initialisers
+
+The default prospective initialiser (`init_prospective_marginal`) sets all
+plots to the population-average linear predictor.  If you want plots
+initialised with specific covariate profiles, supply your own `init_fn`:
+
+```{r custom-init}
+# Example: sample covariate profiles from the empirical data
+my_init_fn <- function(ref_params, n_plots, template_data = NULL, ...) {
+  # template_data: a data frame of plot-level covariates to sample from
+  sampled <- template_data[sample(nrow(template_data), n_plots, replace = TRUE), ]
+
+  data.frame(
+    plotid        = paste0("plot_", seq_len(n_plots)),
+    visit_num     = 0L,
+    eta_last_cond = sampled$my_eta_cond,  # your pre-computed LPs
+    eta_last_zi   = sampled$my_eta_zi
+  )
+}
+
+results_custom <- run_power_sim(
+  ref, scenarios,
+  plot_metadata    = fpi_spatial,
+  mode             = "prospective",
+  init_fn          = my_init_fn,
+  template_data    = fpi_spatial,   # passed through via ...
+  effect_sizes_pct = c(10, 20, 30),
+  horizons         = c(10, 20)
+)
+```
