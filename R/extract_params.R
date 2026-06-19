@@ -168,15 +168,15 @@ extract_params <- function(fit, data,
 
   plot_state <- last_visit |>
     select(
-      Place        = .data[[place_var]],
-      plotid_model = .data[[plotid_var]],
-      visit_num    = .data[[visit_num_var]]
+      place_id  = .data[[place_var]],
+      plotid    = .data[[plotid_var]],
+      visit_num = .data[[visit_num_var]]
     ) |>
     mutate(
       eta_last_cond = eta_cond,
       eta_last_zi   = eta_zi,
-      blup_cond     = blups_cond[as.character(.data$plotid_model)],
-      blup_zi       = blups_zi[as.character(.data$plotid_model)]
+      blup_cond     = blups_cond[as.character(.data$plotid)],
+      blup_zi       = blups_zi[as.character(.data$plotid)]
     )
 
   n_na <- sum(is.na(plot_state$blup_cond))

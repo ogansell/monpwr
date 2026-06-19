@@ -48,13 +48,13 @@ test_that("init_prospective_marginal returns correct structure", {
       offset_var        = NULL,
       log_effort_future = 0,
       plot_state    = data.frame(
-        Place        = c("A", "B"),
-        plotid_model = c("A", "B"),
-        visit_num    = c(2L, 3L),
+        place_id      = c("A", "B"),
+        plotid        = c("A", "B"),
+        visit_num     = c(2L, 3L),
         eta_last_cond = c(1.2, 0.9),
         eta_last_zi   = c(-0.5, -0.3),
-        blup_cond    = c(0.1, -0.1),
-        blup_zi      = c(0.0, 0.0)
+        blup_cond     = c(0.1, -0.1),
+        blup_zi       = c(0.0, 0.0)
       )
     ),
     class = "monpwr_params"

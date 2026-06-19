@@ -26,14 +26,14 @@ init_conditional <- function(ref_params, site_ids, ...) {
   stopifnot(inherits(ref_params, "monpwr_params"))
 
   state <- ref_params$plot_state |>
-    filter(.data$Place %in% site_ids)
+    filter(.data$place_id %in% site_ids)
 
-  missing_ids <- setdiff(site_ids, state$Place)
+  missing_ids <- setdiff(site_ids, state$place_id)
   if (length(missing_ids) > 0) {
     warn(c(
       paste0(length(missing_ids), " site ID(s) in `site_ids` not found in ",
              "`ref_params$plot_state` and will be dropped."),
-      i = "Check that `site_ids` values match the `Place` column in `plot_state`."
+      i = "Check that `site_ids` values match the `place_id` column in `plot_state`."
     ))
   }
 
@@ -133,9 +133,9 @@ init_new_sites <- function(ref_params, n_new,
   ids <- paste0(id_prefix, seq_len(n_new))
 
   data.frame(
-    Place         = ids,
-    plotid_model  = ids,
-    visit_num     = 0L,
+    place_id  = ids,
+    plotid    = ids,
+    visit_num = 0L,
     eta_last_cond = marginal_int_cond + eta_offset_cond + blup_cond,
     eta_last_zi   = marginal_int_zi + eta_offset_zi + blup_zi,
     blup_cond     = blup_cond,

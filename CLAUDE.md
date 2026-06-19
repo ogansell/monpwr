@@ -87,8 +87,8 @@ One row per unique sampling unit. Required columns:
 
 | Column         | Type      | Description                                      |
 |----------------|-----------|--------------------------------------------------|
-| `Place`        | character | Plot identifier (matches `place_var`)            |
-| `plotid_model` | character | RE grouping ID (matches `plotid_var`)            |
+| `place_id`     | character | Plot identifier (renamed from user's `place_var` column) |
+| `plotid`       | character | RE grouping ID (renamed from user's `plotid_var` column) |
 | `visit_num`    | integer   | Last observed visit number                       |
 | `eta_last_cond`| numeric   | Fitted linear predictor at last visit (cond)     |
 | `eta_last_zi`  | numeric   | Fitted linear predictor at last visit (ZI)       |
@@ -228,7 +228,10 @@ toward prospective, undermining the framing.
    `count_var`, `offset_var`) are passed as arguments and stored in `ref_params`.
    The literal strings `"visit_num"`, `"plotid_model"`, `"Place"`, `"visit_gap"`,
    `"count"`, `"log_effort"` appear only as argument *defaults*, not inside logic.
-   `plot_state` always has fixed internal column names (`Place`, `plotid_model`,
+   The internal `plot_state` column names (`place_id`, `plotid`, `visit_num`, etc.)
+   are fixed pipeline labels — not defaults, not user-facing — and may appear as
+   literals only in code that reads/writes `plot_state`.
+   `plot_state` always has fixed internal column names (`place_id`, `plotid`,
    `visit_num`, `eta_last_cond`, `eta_last_zi`, `blup_cond`, `blup_zi`) — code
    that reads from `plot_state` may use these literals directly.
 

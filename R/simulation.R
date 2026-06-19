@@ -81,7 +81,7 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
     counts <- .draw_counts(fam, mu, pzi, n_future, ref_params$disp_par)
 
     rows[[i]] <- data.frame(
-      plotid     = as.character(ps$plotid %||% ps$Place),
+      plotid     = as.character(ps$plotid),
       visit_num  = future_vis,
       log_effort = ref_params$log_effort_future,
       count      = counts,
