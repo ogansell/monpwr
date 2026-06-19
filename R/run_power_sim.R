@@ -173,9 +173,9 @@ run_power_sim <- function(ref_params,
                           horizons         = c(10, 20),
                           n_iter           = 200L,
                           alpha            = 0.10,
-                          scales           = c("National", "Park type"),
-                          park_type_var    = "Park_type",
-                          park_name_var    = "PCL_Name",
+                          scales           = "National",
+                          park_type_var    = NULL,
+                          park_name_var    = NULL,
                           n_min_park       = 5L,
                           place_var        = NULL,
                           init_fn          = NULL,
@@ -200,15 +200,25 @@ run_power_sim <- function(ref_params,
   # Park-scale checks
   want_park_type <- "Park type" %in% scales
   want_park      <- "Park" %in% scales
-  if ((want_park_type || want_park) && !park_type_var %in% names(plot_metadata)) {
-    abort(paste0("`park_type_var` column '", park_type_var,
-                 "' not found in `plot_metadata`. ",
-                 "Set `scales` to exclude 'Park type' and 'Park', or supply the column."))
+  if (want_park_type || want_park) {
+    if (is.null(park_type_var)) {
+      abort("Set `park_type_var` to use 'Park type' or 'Park' scales.")
+    }
+    if (!park_type_var %in% names(plot_metadata)) {
+      abort(paste0("`park_type_var` column '", park_type_var,
+                   "' not found in `plot_metadata`. ",
+                   "Set `scales` to exclude 'Park type' and 'Park', or supply the column."))
+    }
   }
-  if (want_park && !park_name_var %in% names(plot_metadata)) {
-    abort(paste0("`park_name_var` column '", park_name_var,
-                 "' not found in `plot_metadata`. ",
-                 "Set `scales` to exclude 'Park', or supply the column."))
+  if (want_park) {
+    if (is.null(park_name_var)) {
+      abort("Set `park_name_var` to use 'Park' scale.")
+    }
+    if (!park_name_var %in% names(plot_metadata)) {
+      abort(paste0("`park_name_var` column '", park_name_var,
+                   "' not found in `plot_metadata`. ",
+                   "Set `scales` to exclude 'Park', or supply the column."))
+    }
   }
 
   # --- Parallel setup --------------------------------------------------------
