@@ -320,10 +320,10 @@ extract_params.glmmTMB <- function(fit, data,
     place_var    = place_var,
     blups_cond   = blups_cond,
     blups_zi     = blups_zi,
-    predict_cond_fn = function(nd) glmmTMB::predict(fit, newdata = nd,
-                                                     type = "link",  re.form = NULL),
+    predict_cond_fn = function(nd) predict(fit, newdata = nd,
+                                           type = "link",  re.form = NULL),
     predict_zi_fn   = function(nd) tryCatch(
-      glmmTMB::predict(fit, newdata = nd, type = "zlink", re.form = NULL),
+      predict(fit, newdata = nd, type = "zlink", re.form = NULL),
       error = function(e) rep(0, nrow(nd))
     )
   )
