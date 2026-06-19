@@ -158,25 +158,26 @@ extract_params <- function(fit, data,
                                 place_var, blups_cond, blups_zi,
                                 predict_cond_fn, predict_zi_fn) {
   # Last observed visit per plot
+  # unique() handles the case where place_var == plotid_var
+  group_cols <- unique(c(place_var, plotid_var))
   last_visit <- data |>
-    group_by(.data[[place_var]], .data[[plotid_var]]) |>
+    group_by(across(all_of(group_cols))) |>
     slice_max(.data[[visit_num_var]], n = 1, with_ties = FALSE) |>
     ungroup()
 
   eta_cond <- predict_cond_fn(last_visit)
   eta_zi   <- predict_zi_fn(last_visit)
 
+  # transmute avoids duplicate-column issues when place_var == plotid_var
   plot_state <- last_visit |>
-    select(
-      place_id  = .data[[place_var]],
-      plotid    = .data[[plotid_var]],
-      visit_num = .data[[visit_num_var]]
-    ) |>
-    mutate(
+    transmute(
+      place_id      = as.character(.data[[place_var]]),
+      plotid        = as.character(.data[[plotid_var]]),
+      visit_num     = .data[[visit_num_var]],
       eta_last_cond = eta_cond,
       eta_last_zi   = eta_zi,
-      blup_cond     = blups_cond[as.character(.data$plotid)],
-      blup_zi       = blups_zi[as.character(.data$plotid)]
+      blup_cond     = blups_cond[as.character(.data[[plotid_var]])],
+      blup_zi       = blups_zi[as.character(.data[[plotid_var]])]
     )
 
   n_na <- sum(is.na(plot_state$blup_cond))
