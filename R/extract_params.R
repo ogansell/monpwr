@@ -496,6 +496,12 @@ extract_params.lmerMod <- function(fit, data,
 
   vc      <- lme4::VarCorr(fit)
   re_name <- grep(plotid_var, names(vc), value = TRUE)[1]
+  if (is.na(re_name)) {
+    abort(c(
+      paste0("Could not find RE variance for `", plotid_var, "` in model."),
+      i = "Check that `plotid_var` matches the grouping factor name in the model."
+    ))
+  }
   sigma_cond <- sqrt(as.numeric(vc[[re_name]]))
 
   re_df      <- lme4::ranef(fit)[[plotid_var]]
