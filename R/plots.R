@@ -293,3 +293,94 @@ plot_cv <- function(precision,
     ggplot2::coord_flip() +
     ggplot2::theme_bw(base_size = 11)
 }
+
+
+#' Power grid heatmap — n plots × effort (or any two design axes)
+#'
+#' @description
+#' Tile heatmap showing power for every combination of two design variables,
+#' optionally faceted by a third.  The natural use case is exploring how
+#' sample size and survey effort interact: rows = n plots, columns = effort,
+#' facets = effect size (or horizon).
+#'
+#' Any column present in `results` (including columns added via `dplyr::mutate`
+#' after [run_power_sim()], such as `effort_hrs`) can be mapped to any axis.
+#'
+#' @param results A `monpwr_results` data frame from [run_power_sim()], with
+#'   any additional design columns already attached.
+#' @param y_var Character scalar.  Column to place on the y-axis.
+#'   Default `"n_plots"` (already present in all results).
+#' @param x_var Character scalar.  Column to place on the x-axis.
+#'   Default `"effect_pct"`.
+#' @param facet_var Character scalar or `NULL`.  Column to facet by.
+#'   `NULL` (default) produces a single panel.
+#' @param group_filter Character scalar or `NULL`.  Group to include.
+#'   Default `"All"`.  Pass `NULL` to include all groups.
+#' @param y_lab Character scalar.  Y-axis label.  Defaults to `y_var`.
+#' @param x_lab Character scalar.  X-axis label.  Defaults to `x_var`.
+#' @param title Character scalar.  Plot title.
+#' @param subtitle Character scalar.  Plot subtitle.
+#' @param caption Character scalar.  Plot caption.
+#'
+#' @return A `ggplot` object.
+#'
+#' @seealso [run_power_sim()], [plot_power()], [plot_mdc()]
+#' @export
+plot_power_grid <- function(results,
+                            y_var        = "n_plots",
+                            x_var        = "effect_pct",
+                            facet_var    = NULL,
+                            group_filter = "All",
+                            y_lab        = NULL,
+                            x_lab        = NULL,
+                            title        = NULL,
+                            subtitle     = NULL,
+                            caption      = NULL) {
+
+  dat <- results
+  if (!is.null(group_filter)) dat <- dat |> filter(.data$group == group_filter)
+
+  if (nrow(dat) == 0) {
+    warn("No data to plot after filtering. Check `group_filter`.")
+    return(invisible(NULL))
+  }
+
+  dat <- dat |>
+    mutate(power_label = formatC(.data$power, digits = 2, format = "f"))
+
+  p <- ggplot2::ggplot(dat, ggplot2::aes(
+    x    = factor(.data[[x_var]]),
+    y    = factor(.data[[y_var]]),
+    fill = .data$power
+  )) +
+    ggplot2::geom_tile(colour = "white", linewidth = 0.8) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = .data$power_label),
+      colour = "white", fontface = "bold", size = 3.5
+    ) +
+    ggplot2::scale_fill_gradientn(
+      colours = c("#d73027", "#fc8d59", "#fee08b", "#d9ef8b", "#91cf60", "#1a9850"),
+      limits  = c(0, 1),
+      name    = "Power"
+    ) +
+    ggplot2::scale_y_discrete(limits = rev) +
+    ggplot2::labs(
+      x        = x_lab %||% x_var,
+      y        = y_lab %||% y_var,
+      title    = title,
+      subtitle = subtitle,
+      caption  = caption
+    ) +
+    ggplot2::theme_bw(base_size = 11) +
+    ggplot2::theme(
+      strip.background = ggplot2::element_rect(fill = "grey90"),
+      panel.grid       = ggplot2::element_blank()
+    )
+
+  if (!is.null(facet_var)) {
+    p <- p + ggplot2::facet_wrap(ggplot2::vars(.data[[facet_var]]),
+                                 labeller = ggplot2::label_both)
+  }
+
+  p
+}
