@@ -268,8 +268,11 @@ extract_params.glmmTMB <- function(fit, data,
   )
 
   sigma_zi <- tryCatch(
-    sqrt(as.numeric(vc$zi[[plotid_var]])),
-    error = function(e) 0  # no ZI RE is fine
+    {
+      val <- sqrt(as.numeric(vc$zi[[plotid_var]]))
+      if (length(val) == 0L) 0 else val
+    },
+    error = function(e) 0
   )
 
   # BLUPs
