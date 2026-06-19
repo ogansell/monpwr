@@ -97,6 +97,13 @@ extract_params <- function(fit, data,
 # Shared validation helpers (not exported)
 # ------------------------------------------------------------------------------
 
+# Extract the response variable name from a model formula.
+# Returns a simple identifier if the LHS is one; falls back to "count".
+.response_var <- function(fit) {
+  lhs <- tryCatch(deparse(formula(fit)[[2]]), error = function(e) "count")
+  if (grepl("^[a-zA-Z.][a-zA-Z0-9._]*$", lhs)) lhs else "count"
+}
+
 .validate_extract_inputs <- function(data, visit_num_var, plotid_var, place_var) {
   if (!identical(class(data), "data.frame")) {
     abort(c(
@@ -213,6 +220,7 @@ extract_params.glmmTMB <- function(fit, data,
                                    visit_num_var     = "visit_num",
                                    plotid_var        = "plotid_model",
                                    place_var         = "Place",
+                                   visit_gap_var     = "visit_gap",
                                    offset_var        = NULL,
                                    offset_transform  = NULL,
                                    log_effort_future = NULL,
@@ -233,8 +241,8 @@ extract_params.glmmTMB <- function(fit, data,
   beta_visit <- fe_cond[[visit_num_var]]
 
   # visit_gap slopes
-  beta_gap_cond <- if ("visit_gap" %in% names(fe_cond)) fe_cond[["visit_gap"]] else 0
-  beta_gap_zi   <- if ("visit_gap" %in% names(fe_zi))   fe_zi[["visit_gap"]]   else 0
+  beta_gap_cond <- if (visit_gap_var %in% names(fe_cond)) fe_cond[[visit_gap_var]] else 0
+  beta_gap_zi   <- if (visit_gap_var %in% names(fe_zi))   fe_zi[[visit_gap_var]]   else 0
 
   # Dispersion
   disp_par <- glmmTMB::sigma(fit)
@@ -281,9 +289,11 @@ extract_params.glmmTMB <- function(fit, data,
   }
 
   # visit_gap median
-  visit_gap_med <- if ("visit_gap" %in% names(data)) {
-    median(data[["visit_gap"]], na.rm = TRUE)
+  visit_gap_med <- if (visit_gap_var %in% names(data)) {
+    median(data[[visit_gap_var]], na.rm = TRUE)
   } else 0
+
+  count_var <- .response_var(fit)
 
   # Family string
   fam_raw <- family(fit)$family
@@ -330,6 +340,8 @@ extract_params.glmmTMB <- function(fit, data,
       visit_num_var     = visit_num_var,
       plotid_var        = plotid_var,
       place_var         = place_var,
+      visit_gap_var     = visit_gap_var,
+      count_var         = count_var,
       offset_var        = offset_var,
       log_effort_future = off$log_effort_future,
       plot_state        = plot_state
@@ -359,6 +371,7 @@ extract_params.glmerMod <- function(fit, data,
                                     visit_num_var     = "visit_num",
                                     plotid_var        = "plotid_model",
                                     place_var         = "Place",
+                                    visit_gap_var     = "visit_gap",
                                     offset_var        = NULL,
                                     offset_transform  = NULL,
                                     log_effort_future = NULL,
@@ -375,7 +388,7 @@ extract_params.glmerMod <- function(fit, data,
     ))
   }
   beta_visit    <- fe[[visit_num_var]]
-  beta_gap_cond <- if ("visit_gap" %in% names(fe)) fe[["visit_gap"]] else 0
+  beta_gap_cond <- if (visit_gap_var %in% names(fe)) fe[[visit_gap_var]] else 0
 
   # Dispersion / family
   fam_obj  <- family(fit)
@@ -412,9 +425,11 @@ extract_params.glmerMod <- function(fit, data,
   blups_cond <- setNames(re_df[, "(Intercept)"], rownames(re_df))
   blups_zi   <- setNames(rep(0, length(blups_cond)), names(blups_cond))
 
-  visit_gap_med <- if ("visit_gap" %in% names(data)) {
-    median(data[["visit_gap"]], na.rm = TRUE)
+  visit_gap_med <- if (visit_gap_var %in% names(data)) {
+    median(data[[visit_gap_var]], na.rm = TRUE)
   } else 0
+
+  count_var <- .response_var(fit)
 
   plot_state <- .extract_plot_state(
     fit           = fit,
@@ -442,6 +457,8 @@ extract_params.glmerMod <- function(fit, data,
       visit_num_var     = visit_num_var,
       plotid_var        = plotid_var,
       place_var         = place_var,
+      visit_gap_var     = visit_gap_var,
+      count_var         = count_var,
       offset_var        = offset_var,
       log_effort_future = off$log_effort_future,
       plot_state        = plot_state
@@ -456,6 +473,7 @@ extract_params.lmerMod <- function(fit, data,
                                    visit_num_var     = "visit_num",
                                    plotid_var        = "plotid_model",
                                    place_var         = "Place",
+                                   visit_gap_var     = "visit_gap",
                                    offset_var        = NULL,
                                    offset_transform  = NULL,
                                    log_effort_future = NULL,
@@ -469,7 +487,7 @@ extract_params.lmerMod <- function(fit, data,
   }
 
   beta_visit    <- fe[[visit_num_var]]
-  beta_gap_cond <- if ("visit_gap" %in% names(fe)) fe[["visit_gap"]] else 0
+  beta_gap_cond <- if (visit_gap_var %in% names(fe)) fe[[visit_gap_var]] else 0
   disp_par      <- lme4::sigma(fit)  # residual SD for Gaussian
 
   vc      <- lme4::VarCorr(fit)
@@ -480,9 +498,11 @@ extract_params.lmerMod <- function(fit, data,
   blups_cond <- setNames(re_df[, "(Intercept)"], rownames(re_df))
   blups_zi   <- setNames(rep(0, length(blups_cond)), names(blups_cond))
 
-  visit_gap_med <- if ("visit_gap" %in% names(data)) {
-    median(data[["visit_gap"]], na.rm = TRUE)
+  visit_gap_med <- if (visit_gap_var %in% names(data)) {
+    median(data[[visit_gap_var]], na.rm = TRUE)
   } else 0
+
+  count_var <- .response_var(fit)
 
   plot_state <- .extract_plot_state(
     fit           = fit,
@@ -510,6 +530,8 @@ extract_params.lmerMod <- function(fit, data,
       visit_num_var     = visit_num_var,
       plotid_var        = plotid_var,
       place_var         = place_var,
+      visit_gap_var     = visit_gap_var,
+      count_var         = count_var,
       offset_var        = offset_var,
       log_effort_future = off$log_effort_future,
       plot_state        = plot_state

@@ -71,6 +71,9 @@ list(
   visit_num_var     = <character> # column name of visit sequence in data
   plotid_var        = <character> # column name of RE grouping factor in data
   place_var         = <character> # column name of plot identifier in data
+  visit_gap_var     = <character> # column name of visit gap variable (default "visit_gap")
+  count_var         = <character> # column name of response variable; auto-detected from
+                                  # model formula LHS; falls back to "count" if LHS is complex
   offset_var        = <character> # column name of pre-computed log-offset, or NULL
   log_effort_future = <numeric>   # scalar assumed log-offset for simulated future visits
                                   # (0 if no offset; median observed if offset present)
@@ -220,10 +223,14 @@ toward prospective, undermining the framing.
    Adding a new model class means adding a new `extract_params.myclass()` method
    that returns all required fields — no changes to simulation or plotting code.
 
-2. **No hardcoded column names anywhere in package internals.** All column names
-   (`visit_num_var`, `plotid_var`, `place_var`, `offset_var`) are passed as
-   arguments and stored in `ref_params`. The strings `"visit_num"`, `"plotid_model"`,
-   `"Place"`, `"log_effort"` appear only as argument defaults, not inside logic.
+2. **No hardcoded column names anywhere in package internals.** All user-data
+   column names (`visit_num_var`, `plotid_var`, `place_var`, `visit_gap_var`,
+   `count_var`, `offset_var`) are passed as arguments and stored in `ref_params`.
+   The literal strings `"visit_num"`, `"plotid_model"`, `"Place"`, `"visit_gap"`,
+   `"count"`, `"log_effort"` appear only as argument *defaults*, not inside logic.
+   `plot_state` always has fixed internal column names (`Place`, `plotid_model`,
+   `visit_num`, `eta_last_cond`, `eta_last_zi`, `blup_cond`, `blup_zi`) — code
+   that reads from `plot_state` may use these literals directly.
 
 3. **BLUPs as point estimates.** Using point-estimate BLUPs for conditional
    simulation is correct. Sampling from the BLUP posterior variance shifts

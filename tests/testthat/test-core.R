@@ -43,6 +43,8 @@ test_that("init_prospective_marginal returns correct structure", {
       visit_num_var     = "visit_num",
       plotid_var        = "plotid_model",
       place_var         = "Place",
+      visit_gap_var     = "visit_gap",
+      count_var         = "count",
       offset_var        = NULL,
       log_effort_future = 0,
       plot_state    = data.frame(
@@ -78,6 +80,8 @@ test_that("simulate_visits returns correct structure", {
       visit_num_var     = "visit_num",
       plotid_var        = "plotid_model",
       place_var         = "Place",
+      visit_gap_var     = "visit_gap",
+      count_var         = "count",
       offset_var        = NULL,
       log_effort_future = 0,
       plot_state    = data.frame()
@@ -117,6 +121,8 @@ test_that("simulate_visits uses log_effort_future from ref_params", {
       visit_num_var     = "visit_num",
       plotid_var        = "plotid_model",
       place_var         = "Place",
+      visit_gap_var     = "visit_gap",
+      count_var         = "count",
       offset_var        = "log_n_hours",
       log_effort_future = log(8),
       plot_state        = data.frame()

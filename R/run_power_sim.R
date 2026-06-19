@@ -310,8 +310,10 @@ run_power_sim <- function(ref_params,
 
     hd <- if (mode == "conditional" && !is.null(data)) {
       build_historical(data, these_sites, place_var = place_var,
-                       plotid_var = ref_params$plotid_var,
-                       offset_var = ref_params$offset_var)
+                       plotid_var    = ref_params$plotid_var,
+                       visit_num_var = ref_params$visit_num_var,
+                       count_var     = ref_params$count_var,
+                       offset_var    = ref_params$offset_var)
     } else {
       NULL
     }

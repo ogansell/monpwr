@@ -25,18 +25,15 @@
 init_conditional <- function(ref_params, site_ids, ...) {
   stopifnot(inherits(ref_params, "monpwr_params"))
 
-  place_col <- ref_params$place_var %||% "Place"
-
   state <- ref_params$plot_state |>
-    filter(.data[[place_col]] %in% site_ids)
+    filter(.data$Place %in% site_ids)
 
-  missing_ids <- setdiff(site_ids, state[[place_col]])
+  missing_ids <- setdiff(site_ids, state$Place)
   if (length(missing_ids) > 0) {
     warn(c(
       paste0(length(missing_ids), " site ID(s) in `site_ids` not found in ",
              "`ref_params$plot_state` and will be dropped."),
-      i = paste0("Check that `site_ids` values match the `",
-                 place_col, "` column in the model data.")
+      i = "Check that `site_ids` values match the `Place` column in `plot_state`."
     ))
   }
 

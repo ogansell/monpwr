@@ -162,9 +162,11 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
 #' @seealso [simulate_visits()], [run_power_sim()]
 #' @export
 build_historical <- function(data, site_ids,
-                             place_var  = "Place",
-                             plotid_var = "plotid_model",
-                             offset_var = NULL) {
+                             place_var     = "Place",
+                             plotid_var    = "plotid_model",
+                             visit_num_var = "visit_num",
+                             count_var     = "count",
+                             offset_var    = NULL) {
   log_eff_vals <- if (!is.null(offset_var) && offset_var %in% names(data)) {
     data[[offset_var]]
   } else {
@@ -176,9 +178,9 @@ build_historical <- function(data, site_ids,
     filter(.data[[place_var]] %in% site_ids) |>
     transmute(
       plotid     = as.character(.data[[plotid_var]]),
-      visit_num  = .data$visit_num,
+      visit_num  = .data[[visit_num_var]],
       log_effort = .data$.log_effort,
-      count      = .data$count,
+      count      = .data[[count_var]],
       source     = "observed"
     )
 }
