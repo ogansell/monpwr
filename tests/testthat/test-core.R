@@ -159,7 +159,6 @@ test_that("compute_mdc returns NA when power target not reached", {
     data.frame(
       scenario   = "sc1",
       label      = "Test",
-      scale      = "National",
       group      = "All",
       horizon    = 10,
       effect_pct = c(10, 20, 30),
@@ -182,7 +181,6 @@ test_that("compute_mdc returns correct MDC when power target reached", {
     data.frame(
       scenario   = "sc1",
       label      = "Test",
-      scale      = "National",
       group      = "All",
       horizon    = 10,
       effect_pct = c(10, 20, 30),

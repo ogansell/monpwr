@@ -11,9 +11,8 @@
 #'   `n_future = floor(horizon / remeasure_yrs)`.
 #' @param site_selector A function with signature `function(plot_metadata)`
 #'   that takes the `plot_metadata` data frame passed to [run_power_sim()]
-#'   and returns a character vector of `Place` IDs to retain under this
-#'   scenario.  For a scenario retaining all plots, use
-#'   `function(sp) unique(sp$Place)`.
+#'   and returns a character vector of plot IDs (matching the `place_var`
+#'   column) to retain under this scenario.
 #'
 #' @return A list of class `"monpwr_scenario"` with elements `label`,
 #'   `remeasure_yrs`, and `site_selector`.
@@ -104,21 +103,16 @@ print.monpwr_scenario <- function(x, ...) {
 #'   `max(1L, floor(horizon / remeasure_yrs))`.
 #' @param n_iter Integer scalar.  Number of simulation replicates per cell.
 #'   Default 200.  Use a smaller value (e.g. 30) for quick smoke-tests.
-#' @param alpha Numeric scalar.  Significance threshold.  Default 0.10
-#'   (consistent with standard Tier 1 practice).
-#' @param scales Character vector.  Reporting scales to include.  Any
-#'   combination of `"National"`, `"Park type"`, `"Park"`.
-#'   Default `c("National", "Park type")`.
-#' @param park_type_var Character scalar.  Column in `plot_metadata`
-#'   distinguishing park types (e.g. `"Park_type"`).  Required if
-#'   `"Park type"` or `"Park"` is in `scales`.
-#' @param park_name_var Character scalar.  Column in `plot_metadata` for
-#'   individual park names (e.g. `"PCL_Name"`).  Required if `"Park"` is
-#'   in `scales`.
-#' @param n_min_park Integer scalar.  Minimum number of retained plots for
-#'   a park-level analysis to be run.  Default 5.
-#' @param place_var Character scalar.  Name of the plot ID column in
-#'   `plot_metadata`.  Default `"Place"`.
+#' @param alpha Numeric scalar.  Significance threshold.  Default 0.10.
+#' @param group_var Character scalar or `NULL`.  Optional column name in
+#'   `plot_metadata` to stratify results by sub-group.  If `NULL` (default),
+#'   results are reported for all selected sites combined (`group = "All"`).
+#'   If supplied (e.g. `group_var = "region"`), results include an "All" row
+#'   plus one row per unique level of that column among the retained sites.
+#'   Each sub-group must contain at least 2 plots to be run.
+#' @param place_var Character scalar or `NULL`.  Name of the plot ID column
+#'   in `plot_metadata`.  If `NULL` (default), resolved from
+#'   `ref_params$place_var`.
 #' @param init_fn Function or `NULL`.  Custom initialiser with signature
 #'   `function(ref_params, n_plots, ...)`.  If `NULL` (default), uses
 #'   [init_conditional()] for `mode = "conditional"` and
@@ -129,8 +123,8 @@ print.monpwr_scenario <- function(x, ...) {
 #' @param ... Additional arguments passed to `init_fn`.
 #'
 #' @return A data frame (class `"monpwr_results"`) with one row per
-#'   scenario × scale × group × effect size × horizon, and columns:
-#'   `scenario`, `label`, `scale`, `group`, `effect_pct`, `horizon`,
+#'   scenario × group × effect size × horizon, and columns:
+#'   `scenario`, `label`, `group`, `effect_pct`, `horizon`,
 #'   `n_plots`, `n_future`, `power`, `n_converged`, `conv_rate`.
 #'
 #' @examples
@@ -173,10 +167,7 @@ run_power_sim <- function(ref_params,
                           horizons         = c(10, 20),
                           n_iter           = 200L,
                           alpha            = 0.10,
-                          scales           = "National",
-                          park_type_var    = NULL,
-                          park_name_var    = NULL,
-                          n_min_park       = 5L,
+                          group_var        = NULL,
                           place_var        = NULL,
                           init_fn          = NULL,
                           workers          = NULL,
@@ -196,29 +187,8 @@ run_power_sim <- function(ref_params,
   if (!place_var %in% names(plot_metadata)) {
     abort(paste0("`place_var` column '", place_var, "' not found in `plot_metadata`."))
   }
-
-  # Park-scale checks
-  want_park_type <- "Park type" %in% scales
-  want_park      <- "Park" %in% scales
-  if (want_park_type || want_park) {
-    if (is.null(park_type_var)) {
-      abort("Set `park_type_var` to use 'Park type' or 'Park' scales.")
-    }
-    if (!park_type_var %in% names(plot_metadata)) {
-      abort(paste0("`park_type_var` column '", park_type_var,
-                   "' not found in `plot_metadata`. ",
-                   "Set `scales` to exclude 'Park type' and 'Park', or supply the column."))
-    }
-  }
-  if (want_park) {
-    if (is.null(park_name_var)) {
-      abort("Set `park_name_var` to use 'Park' scale.")
-    }
-    if (!park_name_var %in% names(plot_metadata)) {
-      abort(paste0("`park_name_var` column '", park_name_var,
-                   "' not found in `plot_metadata`. ",
-                   "Set `scales` to exclude 'Park', or supply the column."))
-    }
+  if (!is.null(group_var) && !group_var %in% names(plot_metadata)) {
+    abort(paste0("`group_var` column '", group_var, "' not found in `plot_metadata`."))
   }
 
   # --- Parallel setup --------------------------------------------------------
@@ -246,28 +216,25 @@ run_power_sim <- function(ref_params,
       "Scenario {sc_idx}/{length(scenarios)}: {sc$label} | {n_sc} plots"
     )
 
-    # Build scale list for this scenario
-    scale_list <- .build_scale_list(
+    # Build group list for this scenario
+    group_list <- .build_group_list(
       sites         = sites,
       plot_metadata = plot_metadata,
       ref_params    = ref_params,
       data          = data,
       mode          = mode,
       init_fn       = init_fn,
-      scales        = scales,
-      park_type_var = park_type_var,
-      park_name_var = park_name_var,
-      n_min_park    = n_min_park,
+      group_var     = group_var,
       place_var     = place_var,
       ...
     )
 
-    # Simulate each scale x effect x horizon cell
-    sc_results <- map_dfr(scale_list, function(sl) {
-      if (nrow(sl$plot_state) < 2) return(NULL)
+    # Simulate each group x effect x horizon cell
+    sc_results <- map_dfr(group_list, function(gl) {
+      if (nrow(gl$plot_state) < 2) return(NULL)
 
       cli::cli_alert_info(
-        "  Scale: {sl$scale} | Group: {sl$group} | n={nrow(sl$plot_state)}"
+        "  Group: {gl$group} | n={nrow(gl$plot_state)}"
       )
 
       expand_grid(
@@ -277,8 +244,8 @@ run_power_sim <- function(ref_params,
         future_pmap_dfr(function(effect_pct, horizon) {
           n_future <- max(1L, floor(horizon / sc$remeasure_yrs))
           .run_one_cell(
-            plot_state  = sl$plot_state,
-            hist_dat    = sl$hist_dat,
+            plot_state  = gl$plot_state,
+            hist_dat    = gl$hist_dat,
             n_future    = n_future,
             effect_pct  = effect_pct,
             ref_params  = ref_params,
@@ -287,7 +254,7 @@ run_power_sim <- function(ref_params,
             mode        = mode,
             draw_re     = (mode == "prospective")
           ) |>
-            mutate(scale = sl$scale, group = sl$group, horizon = horizon)
+            mutate(group = gl$group, horizon = horizon)
         }, .options = furrr::furrr_options(seed = TRUE))
     }) |>
       mutate(scenario = sc_name, label = sc$label)
@@ -302,17 +269,15 @@ run_power_sim <- function(ref_params,
 
 
 # ------------------------------------------------------------------------------
-# Internal: build the list of reporting scales for one scenario
+# Internal: build the list of reporting groups for one scenario
 # ------------------------------------------------------------------------------
 
-.build_scale_list <- function(sites, plot_metadata, ref_params, data, mode,
-                              init_fn, scales, park_type_var, park_name_var,
-                              n_min_park, place_var, ...) {
+.build_group_list <- function(sites, plot_metadata, ref_params, data, mode,
+                              init_fn, group_var, place_var, ...) {
 
-  sl <- list()
+  gl <- list()
 
-  # Helper: build one scale entry
-  make_entry <- function(scale, group, these_sites) {
+  make_entry <- function(group, these_sites) {
     ps <- if (mode == "conditional") {
       init_conditional(ref_params, these_sites)
     } else {
@@ -329,46 +294,25 @@ run_power_sim <- function(ref_params,
       NULL
     }
 
-    list(scale = scale, group = group, plot_state = ps, hist_dat = hd)
+    list(group = group, plot_state = ps, hist_dat = hd)
   }
 
-  # National
-  if ("National" %in% scales) {
-    sl <- c(sl, list(make_entry("National", "All", sites)))
-  }
+  # Always include all selected sites
+  gl <- c(gl, list(make_entry("All", sites)))
 
-  # Park type
-  if ("Park type" %in% scales) {
-    park_types <- unique(plot_metadata[[park_type_var]])
-    for (pt in park_types) {
-      type_sites <- plot_metadata[[place_var]][
-        plot_metadata[[park_type_var]] == pt &
-          plot_metadata[[place_var]] %in% sites
-      ]
-      if (length(type_sites) >= 2) {
-        sl <- c(sl, list(make_entry("Park type", pt, type_sites)))
+  # Optional sub-group breakdown
+  if (!is.null(group_var)) {
+    retained <- plot_metadata[plot_metadata[[place_var]] %in% sites, ]
+    levels   <- unique(retained[[group_var]])
+    for (lv in levels) {
+      sub_sites <- retained[[place_var]][retained[[group_var]] == lv]
+      if (length(sub_sites) >= 2) {
+        gl <- c(gl, list(make_entry(as.character(lv), sub_sites)))
       }
     }
   }
 
-  # Individual parks
-  if ("Park" %in% scales && !is.null(park_name_var)) {
-    park_counts <- plot_metadata |>
-      filter(.data[[place_var]] %in% sites) |>
-      count(.data[[park_name_var]], name = "n_plots") |>
-      filter(.data$n_plots >= n_min_park)
-
-    for (i in seq_len(nrow(park_counts))) {
-      pcl        <- park_counts[[park_name_var]][i]
-      pcl_sites  <- plot_metadata[[place_var]][
-        plot_metadata[[park_name_var]] == pcl &
-          plot_metadata[[place_var]] %in% sites
-      ]
-      sl <- c(sl, list(make_entry("Park", pcl, pcl_sites)))
-    }
-  }
-
-  sl
+  gl
 }
 
 
@@ -414,7 +358,7 @@ print.monpwr_results <- function(x, ...) {
   cli::cli_h2("monpwr_results")
   cli::cli_bullets(c(
     "*" = paste0("Scenarios:    ", paste(unique(x$label), collapse = ", ")),
-    "*" = paste0("Scales:       ", paste(unique(x$scale), collapse = ", ")),
+    "*" = paste0("Groups:       ", paste(unique(x$group), collapse = ", ")),
     "*" = paste0("Effect sizes: ", paste(sort(unique(x$effect_pct)), collapse = ", "), "%"),
     "*" = paste0("Horizons:     ", paste(sort(unique(x$horizon)), collapse = ", "), " yr"),
     "*" = paste0("Rows:         ", nrow(x))

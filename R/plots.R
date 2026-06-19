@@ -9,10 +9,8 @@
 #' to display, or call [plot_power_gain()] to show both traces together.
 #'
 #' @param results A `monpwr_results` data frame from [run_power_sim()].
-#' @param scale_filter Character scalar.  Reporting scale to display.
-#'   Default `"Overall"`.
-#' @param group_filter Character scalar or `NULL`.  Group within the scale.
-#'   `NULL` includes all groups.
+#' @param group_filter Character scalar or `NULL`.  Group to display.
+#'   Default `"All"` (all selected sites).  Pass `NULL` to include all groups.
 #' @param sim_type_filter Character scalar.  Which simulation type to display:
 #'   `"combined"` (default) or `"legacy_only"`.
 #' @param power_target Numeric scalar.  Reference line for target power.
@@ -25,8 +23,7 @@
 #' @seealso [plot_power_gain()], [plot_mdc()], [plot_cv()], [run_power_sim()]
 #' @export
 plot_power <- function(results,
-                       scale_filter    = "Overall",
-                       group_filter    = NULL,
+                       group_filter    = "All",
                        sim_type_filter = "combined",
                        power_target    = 0.80,
                        alpha           = 0.10,
@@ -38,14 +35,13 @@ plot_power <- function(results,
   }
 
   dat <- results |>
-    filter(.data$scale    == scale_filter,
-           .data$sim_type == sim_type_filter,
+    filter(.data$sim_type == sim_type_filter,
            !is.na(.data$power))
 
   if (!is.null(group_filter)) dat <- dat |> filter(.data$group == group_filter)
 
   if (nrow(dat) == 0) {
-    warn("No data to plot after filtering. Check `scale_filter`, `group_filter`, and `sim_type_filter`.")
+    warn("No data to plot after filtering. Check `group_filter` and `sim_type_filter`.")
     return(invisible(NULL))
   }
 
@@ -68,8 +64,7 @@ plot_power <- function(results,
     ggplot2::labs(
       x       = "Effect size (% change per visit)",
       y       = "Power",
-      title   = title %||% paste0("Power by scenario - ", scale_filter,
-                                  " [", sim_type_filter, "]"),
+      title   = title %||% paste0("Power by scenario [", sim_type_filter, "]"),
       caption = paste0("Alpha = ", alpha,
                        if (!is.na(n_iter_approx))
                          paste0("  |  ~", n_iter_approx, " replicates per cell")
@@ -93,9 +88,8 @@ plot_power <- function(results,
 #' legacy-only).
 #'
 #' @param results A `monpwr_results` data frame from [run_power_sim()].
-#' @param scale_filter Character scalar.  Reporting scale to display.
-#'   Default `"Overall"`.
-#' @param group_filter Character scalar or `NULL`.  Group within the scale.
+#' @param group_filter Character scalar or `NULL`.  Group to display.
+#'   Default `"All"`.  Pass `NULL` to include all groups.
 #' @param power_target Numeric scalar.  Reference line.  Default 0.80.
 #' @param title Character scalar.  Plot title.  Default auto-generated.
 #'
@@ -105,8 +99,7 @@ plot_power <- function(results,
 #' @seealso [plot_power()], [run_power_sim()]
 #' @export
 plot_power_gain <- function(results,
-                            scale_filter  = "Overall",
-                            group_filter  = NULL,
+                            group_filter  = "All",
                             power_target  = 0.80,
                             title         = NULL) {
 
@@ -116,7 +109,7 @@ plot_power_gain <- function(results,
   }
 
   dat <- results |>
-    filter(.data$scale == scale_filter, !is.na(.data$power))
+    filter(!is.na(.data$power))
   if (!is.null(group_filter)) dat <- dat |> filter(.data$group == group_filter)
 
   # Keep only scenarios that have both sim_types (i.e. true hybrid scenarios)
@@ -163,7 +156,7 @@ plot_power_gain <- function(results,
     ggplot2::labs(
       x     = "Effect size (% change per visit)",
       y     = "Power",
-      title = title %||% paste0("Power gain from new sites - ", scale_filter)
+      title = title %||% "Power gain from new sites"
     ) +
     ggplot2::theme_bw(base_size = 11) +
     ggplot2::theme(legend.position = "bottom")
@@ -179,9 +172,8 @@ plot_power_gain <- function(results,
 #' tested effect sizes; the maximum power achieved is shown instead.
 #'
 #' @param mdc A data frame from [compute_mdc()].
-#' @param scale_filter Character scalar.  Reporting scale to display.
-#'   Default `"Overall"`.
 #' @param group_filter Character scalar or `NULL`.  Group to display.
+#'   Default `"All"`.  Pass `NULL` to include all groups.
 #' @param sim_type_filter Character scalar.  `"combined"` (default) or
 #'   `"legacy_only"`.
 #' @param power_target Numeric scalar.  Used in the subtitle.  Default 0.80.
@@ -193,8 +185,7 @@ plot_power_gain <- function(results,
 #' @seealso [compute_mdc()], [plot_power()], [plot_cv()]
 #' @export
 plot_mdc <- function(mdc,
-                     scale_filter    = "Overall",
-                     group_filter    = NULL,
+                     group_filter    = "All",
                      sim_type_filter = "combined",
                      power_target    = 0.80,
                      alpha           = 0.10,
@@ -203,8 +194,7 @@ plot_mdc <- function(mdc,
   if (!"sim_type" %in% names(mdc)) mdc <- mdc |> mutate(sim_type = "combined")
 
   dat <- mdc |>
-    filter(.data$scale    == scale_filter,
-           .data$sim_type == sim_type_filter)
+    filter(.data$sim_type == sim_type_filter)
   if (!is.null(group_filter)) dat <- dat |> filter(.data$group == group_filter)
 
   if (nrow(dat) == 0) {
@@ -239,8 +229,7 @@ plot_mdc <- function(mdc,
     ggplot2::labs(
       x        = "Monitoring horizon (yr)",
       y        = NULL,
-      title    = title %||% paste0("MDC by scenario and horizon - ", scale_filter,
-                                   " [", sim_type_filter, "]"),
+      title    = title %||% paste0("MDC by scenario and horizon [", sim_type_filter, "]"),
       subtitle = paste0("Darker = lower MDC = more sensitive  |  ",
                         "Red = ", round(power_target * 100), "% power not achieved"),
       caption  = paste0("Alpha = ", alpha)

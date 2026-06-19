@@ -2,8 +2,8 @@
 #'
 #' @description
 #' Derives the minimum detectable change (MDC) for each scenario × sim_type ×
-#' scale × group × horizon combination: the smallest effect size (% change per
-#' visit) at which power reaches `power_target`.
+#' group × horizon combination: the smallest effect size (% change per visit)
+#' at which power reaches `power_target`.
 #'
 #' For hybrid scenarios, the `sim_type` column distinguishes between the
 #' combined (legacy + new sites) and the legacy-only traces, allowing the
@@ -12,9 +12,9 @@
 #' @param results A `monpwr_results` data frame from [run_power_sim()].
 #' @param power_target Numeric scalar.  Target power level.  Default 0.80.
 #'
-#' @return A data frame with one row per scenario × sim_type × scale × group
-#'   × horizon, and columns: `scenario`, `label`, `sim_type`, `scale`,
-#'   `group`, `horizon`, `n_legacy`, `n_new`, `n_total`, `n_future`,
+#' @return A data frame with one row per scenario × sim_type × group × horizon,
+#'   and columns: `scenario`, `label`, `sim_type`, `group`, `horizon`,
+#'   `n_legacy`, `n_new`, `n_total`, `n_future`,
 #'   `mdc_pct` (`NA` if target not achieved within tested effect sizes),
 #'   `max_power`.
 #'
@@ -35,7 +35,7 @@ compute_mdc <- function(results, power_target = 0.80) {
   results |>
     group_by(
       .data$scenario, .data$label, .data$sim_type,
-      .data$scale,    .data$group, .data$horizon
+      .data$group, .data$horizon
     ) |>
     summarise(
       mdc_pct   = {
