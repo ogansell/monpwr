@@ -6,8 +6,7 @@
 \usage{
 plot_mdc(
   mdc,
-  scale_filter = "Overall",
-  group_filter = NULL,
+  group_filter = "All",
   sim_type_filter = "combined",
   power_target = 0.8,
   alpha = 0.1,
@@ -17,10 +16,8 @@ plot_mdc(
 \arguments{
 \item{mdc}{A data frame from \code{\link[=compute_mdc]{compute_mdc()}}.}
 
-\item{scale_filter}{Character scalar.  Reporting scale to display.
-Default \code{"Overall"}.}
-
-\item{group_filter}{Character scalar or \code{NULL}.  Group to display.}
+\item{group_filter}{Character scalar or \code{NULL}.  Group to display.
+Default \code{"All"}.  Pass \code{NULL} to include all groups.}
 
 \item{sim_type_filter}{Character scalar.  \code{"combined"} (default) or
 \code{"legacy_only"}.}

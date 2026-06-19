@@ -143,9 +143,27 @@ avoid row-index misalignment.
    `eff_log` as the true trend starting from the observed state.
    `draw_re = FALSE` — random effects already absorbed into `eta_last_cond`.
 
-4. `fit_and_test(combined, ref_params)` — fits a simplified test model
+4. `fit_and_test(combined, ref_params, test)` — fits a simplified test model
    (random intercept only, no fixed covariates) to observed + simulated data.
-   Returns Wald p-value for `visit_num`; `NA` on convergence failure.
+   Returns p-value for `visit_num`; `NA` on convergence failure.
+   `test = "wald"` (default) uses the z/t-statistic from model coefficients.
+   `test = "lrt"` fits a null model (no `visit_num`) and computes a
+   likelihood-ratio chi-squared test — more reliable at small sample sizes
+   but ~2× slower (two model fits per replicate).
+
+### Raw p-values, retest, and extend
+
+`.run_one_cell()` stores every replicate's raw p-value in a list-column
+`p_values` on the results tibble. This enables:
+
+- `retest(results, alpha)` — re-summarise power at a different significance
+  threshold without re-simulating.
+- `extend(results, additional)` — concatenate p-values from two runs of the
+  same design grid and recompute power from the pooled replicates.
+  Analogous to `simr::extend()`.
+
+Both functions recompute `power`, `power_lower`, `power_upper`, `n_converged`,
+and `conv_rate` from the stored/pooled p-values.
 
 ### Prospective mode
 
@@ -274,7 +292,7 @@ Be sceptical of:
 
 Planned backlog (in priority order):
 1. Conditional vs prospective comparison write-up on FPI data — **this first**
-2. Binomial CIs on power estimates via `binom.test`
+2. ~~Binomial CIs on power estimates via `binom.test`~~ — **done**
 3. Hybrid mode — plots absent from `plot_state` initialised from marginal intercept
 4. Stress test on a second dataset (bird counts, different family)
 5. `trend_fn` interface replacing scalar `eff_log` with a function over visit steps

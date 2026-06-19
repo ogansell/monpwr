@@ -6,8 +6,7 @@
 \usage{
 plot_power_gain(
   results,
-  scale_filter = "Overall",
-  group_filter = NULL,
+  group_filter = "All",
   power_target = 0.8,
   title = NULL
 )
@@ -15,10 +14,8 @@ plot_power_gain(
 \arguments{
 \item{results}{A \code{monpwr_results} data frame from \code{\link[=run_power_sim]{run_power_sim()}}.}
 
-\item{scale_filter}{Character scalar.  Reporting scale to display.
-Default \code{"Overall"}.}
-
-\item{group_filter}{Character scalar or \code{NULL}.  Group within the scale.}
+\item{group_filter}{Character scalar or \code{NULL}.  Group to display.
+Default \code{"All"}.  Pass \code{NULL} to include all groups.}
 
 \item{power_target}{Numeric scalar.  Reference line.  Default 0.80.}
 

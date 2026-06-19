@@ -6,8 +6,7 @@
 \usage{
 plot_power(
   results,
-  scale_filter = "Overall",
-  group_filter = NULL,
+  group_filter = "All",
   sim_type_filter = "combined",
   power_target = 0.8,
   alpha = 0.1,
@@ -17,11 +16,8 @@ plot_power(
 \arguments{
 \item{results}{A \code{monpwr_results} data frame from \code{\link[=run_power_sim]{run_power_sim()}}.}
 
-\item{scale_filter}{Character scalar.  Reporting scale to display.
-Default \code{"Overall"}.}
-
-\item{group_filter}{Character scalar or \code{NULL}.  Group within the scale.
-\code{NULL} includes all groups.}
+\item{group_filter}{Character scalar or \code{NULL}.  Group to display.
+Default \code{"All"} (all selected sites).  Pass \code{NULL} to include all groups.}
 
 \item{sim_type_filter}{Character scalar.  Which simulation type to display:
 \code{"combined"} (default) or \code{"legacy_only"}.}

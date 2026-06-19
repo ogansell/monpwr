@@ -14,11 +14,9 @@ run_power_sim(
   horizons = c(10, 20),
   n_iter = 200L,
   alpha = 0.1,
-  scales = c("National", "Park type"),
-  park_type_var = "Park_type",
-  park_name_var = "PCL_Name",
-  n_min_park = 5L,
-  place_var = "Place",
+  test = c("wald", "lrt"),
+  group_var = NULL,
+  place_var = NULL,
   init_fn = NULL,
   workers = NULL,
   ...
@@ -52,26 +50,24 @@ internally to log-scale coefficients via \code{log(1 + pct / 100)}.}
 \item{n_iter}{Integer scalar.  Number of simulation replicates per cell.
 Default 200.  Use a smaller value (e.g. 30) for quick smoke-tests.}
 
-\item{alpha}{Numeric scalar.  Significance threshold.  Default 0.10
-(consistent with standard Tier 1 practice).}
+\item{alpha}{Numeric scalar.  Significance threshold.  Default 0.10.}
 
-\item{scales}{Character vector.  Reporting scales to include.  Any
-combination of \code{"National"}, \code{"Park type"}, \code{"Park"}.
-Default \code{c("National", "Park type")}.}
+\item{test}{Character scalar.  \code{"wald"} (default) or \code{"lrt"}.  The Wald
+test extracts the z/t-statistic from model coefficients.  The
+likelihood-ratio test (\code{"lrt"}) compares the full model to a reduced
+model without the visit coefficient; more reliable at small sample
+sizes but slower.}
 
-\item{park_type_var}{Character scalar.  Column in \code{plot_metadata}
-distinguishing park types (e.g. \code{"Park_type"}).  Required if
-\code{"Park type"} or \code{"Park"} is in \code{scales}.}
+\item{group_var}{Character scalar or \code{NULL}.  Optional column name in
+\code{plot_metadata} to stratify results by sub-group.  If \code{NULL} (default),
+results are reported for all selected sites combined (\code{group = "All"}).
+If supplied (e.g. \code{group_var = "region"}), results include an "All" row
+plus one row per unique level of that column among the retained sites.
+Each sub-group must contain at least 2 plots to be run.}
 
-\item{park_name_var}{Character scalar.  Column in \code{plot_metadata} for
-individual park names (e.g. \code{"PCL_Name"}).  Required if \code{"Park"} is
-in \code{scales}.}
-
-\item{n_min_park}{Integer scalar.  Minimum number of retained plots for
-a park-level analysis to be run.  Default 5.}
-
-\item{place_var}{Character scalar.  Name of the plot ID column in
-\code{plot_metadata}.  Default \code{"Place"}.}
+\item{place_var}{Character scalar or \code{NULL}.  Name of the plot ID column
+in \code{plot_metadata}.  If \code{NULL} (default), resolved from
+\code{ref_params$place_var}.}
 
 \item{init_fn}{Function or \code{NULL}.  Custom initialiser with signature
 \verb{function(ref_params, n_plots, ...)}.  If \code{NULL} (default), uses
@@ -86,9 +82,14 @@ disable parallelism.}
 }
 \value{
 A data frame (class \code{"monpwr_results"}) with one row per
-scenario × scale × group × effect size × horizon, and columns:
-\code{scenario}, \code{label}, \code{scale}, \code{group}, \code{effect_pct}, \code{horizon},
-\code{n_plots}, \code{n_future}, \code{power}, \code{n_converged}, \code{conv_rate}.
+scenario × group × effect size × horizon, and columns:
+\code{scenario}, \code{label}, \code{group}, \code{effect_pct}, \code{horizon},
+\code{n_plots}, \code{n_future}, \code{power}, \code{power_lower}, \code{power_upper},
+\code{n_converged}, \code{conv_rate}, \code{p_values}.  \code{power_lower} and
+\code{power_upper} are exact (Clopper–Pearson) 95\\% binomial confidence
+limits.  \code{p_values} is a list-column of per-replicate raw p-values
+(\code{NA} for non-converged fits), enabling \code{\link[=retest]{retest()}} at alternative
+alpha levels and \code{\link[=extend]{extend()}} to accumulate additional iterations.
 }
 \description{
 The main outer loop of \code{monpwr}.  Iterates over scenarios, reporting

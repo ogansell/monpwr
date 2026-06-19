@@ -1,3 +1,133 @@
+#' Re-test power at a different alpha level
+#'
+#' @description
+#' Recomputes power, CIs, and convergence stats from the stored raw p-values
+#' without re-running any simulations.  Requires results produced by
+#' [run_power_sim()] (which stores p-values as a list-column).
+#'
+#' @param results A `monpwr_results` data frame from [run_power_sim()].
+#' @param alpha Numeric scalar.  New significance threshold.
+#'
+#' @return A `monpwr_results` data frame with updated `power`, `power_lower`,
+#'   `power_upper` columns.  The `p_values` list-column is preserved.
+#'
+#' @seealso [run_power_sim()], [extend()]
+#' @export
+retest <- function(results, alpha) {
+  if (!"p_values" %in% names(results)) {
+    abort(c(
+      "Cannot retest: `p_values` column not found.",
+      i = "Raw p-values are only stored by `run_power_sim()` >= 0.4.0."
+    ))
+  }
+  stopifnot(is.numeric(alpha), length(alpha) == 1, alpha > 0, alpha < 1)
+
+  out <- results |>
+    mutate(
+      n_converged = vapply(.data$p_values, function(pv) sum(!is.na(pv)), integer(1)),
+      power       = vapply(.data$p_values, function(pv) {
+        nc <- sum(!is.na(pv))
+        if (nc == 0) return(NA_real_)
+        sum(pv < alpha, na.rm = TRUE) / nc
+      }, double(1)),
+      power_lower = vapply(.data$p_values, function(pv) {
+        nc <- sum(!is.na(pv))
+        if (nc == 0) return(NA_real_)
+        binom.test(sum(pv < alpha, na.rm = TRUE), nc)$conf.int[1]
+      }, double(1)),
+      power_upper = vapply(.data$p_values, function(pv) {
+        nc <- sum(!is.na(pv))
+        if (nc == 0) return(NA_real_)
+        binom.test(sum(pv < alpha, na.rm = TRUE), nc)$conf.int[2]
+      }, double(1)),
+      conv_rate   = round(.data$n_converged /
+        vapply(.data$p_values, length, integer(1)), 3)
+    )
+
+  class(out) <- union("monpwr_results", class(out))
+  attr(out, "alpha") <- alpha
+  out
+}
+
+
+#' Extend power results with additional iterations
+#'
+#' @description
+#' Combines two `monpwr_results` data frames by concatenating their raw
+#' p-values for matching cells (same scenario × group × effect × horizon),
+#' then recomputes power and CIs from the pooled replicates.  This lets you
+#' accumulate iterations incrementally rather than re-running from scratch.
+#'
+#' Both inputs must have a `p_values` list-column.  Cells present in only
+#' one input are kept as-is.
+#'
+#' @param results A `monpwr_results` data frame.
+#' @param additional A `monpwr_results` data frame with the same structure
+#'   (typically from a second [run_power_sim()] call with different seeds).
+#' @param alpha Numeric scalar.  Significance threshold for the re-summary.
+#'   Default uses `attr(results, "alpha")`, falling back to 0.10.
+#'
+#' @return A `monpwr_results` data frame with pooled p-values and updated
+#'   power estimates.
+#'
+#' @seealso [run_power_sim()], [retest()]
+#' @export
+extend <- function(results, additional, alpha = NULL) {
+  for (x in list(results, additional)) {
+    if (!"p_values" %in% names(x)) {
+      abort(c(
+        "Cannot extend: `p_values` column not found.",
+        i = "Raw p-values are only stored by `run_power_sim()` >= 0.4.0."
+      ))
+    }
+  }
+
+  alpha <- alpha %||% attr(results, "alpha") %||% 0.10
+  key_cols <- c("scenario", "label", "group", "effect_pct", "horizon")
+
+  merged <- dplyr::full_join(
+    results  |> select(all_of(key_cols), p_values_a = "p_values",
+                       "n_plots", "n_future"),
+    additional |> select(all_of(key_cols), p_values_b = "p_values",
+                         "n_plots", "n_future"),
+    by = c(key_cols, "n_plots", "n_future"),
+    suffix = c("", ".b")
+  ) |>
+    mutate(
+      p_values = mapply(function(a, b) {
+        c(if (!is.null(a)) a, if (!is.null(b)) b)
+      }, .data$p_values_a, .data$p_values_b, SIMPLIFY = FALSE)
+    ) |>
+    select(-"p_values_a", -"p_values_b")
+
+  merged <- merged |>
+    mutate(
+      n_converged = vapply(.data$p_values, function(pv) sum(!is.na(pv)), integer(1)),
+      power       = vapply(.data$p_values, function(pv) {
+        nc <- sum(!is.na(pv))
+        if (nc == 0) return(NA_real_)
+        sum(pv < alpha, na.rm = TRUE) / nc
+      }, double(1)),
+      power_lower = vapply(.data$p_values, function(pv) {
+        nc <- sum(!is.na(pv))
+        if (nc == 0) return(NA_real_)
+        binom.test(sum(pv < alpha, na.rm = TRUE), nc)$conf.int[1]
+      }, double(1)),
+      power_upper = vapply(.data$p_values, function(pv) {
+        nc <- sum(!is.na(pv))
+        if (nc == 0) return(NA_real_)
+        binom.test(sum(pv < alpha, na.rm = TRUE), nc)$conf.int[2]
+      }, double(1)),
+      conv_rate   = round(.data$n_converged /
+        vapply(.data$p_values, length, integer(1)), 3)
+    )
+
+  class(merged) <- union("monpwr_results", class(merged))
+  attr(merged, "alpha") <- alpha
+  merged
+}
+
+
 #' Compute minimum detectable change (MDC) from power results
 #'
 #' @description

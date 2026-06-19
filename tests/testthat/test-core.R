@@ -157,16 +157,18 @@ test_that(".draw_counts handles all families", {
 test_that("compute_mdc returns NA when power target not reached", {
   fake_results <- structure(
     data.frame(
-      scenario   = "sc1",
-      label      = "Test",
-      group      = "All",
-      horizon    = 10,
-      effect_pct = c(10, 20, 30),
-      power      = c(0.4, 0.6, 0.7),
-      n_plots    = 50,
-      n_future   = 2,
+      scenario    = "sc1",
+      label       = "Test",
+      group       = "All",
+      horizon     = 10,
+      effect_pct  = c(10, 20, 30),
+      power       = c(0.4, 0.6, 0.7),
+      power_lower = c(0.33, 0.53, 0.63),
+      power_upper = c(0.47, 0.67, 0.77),
+      n_plots     = 50,
+      n_future    = 2,
       n_converged = 200,
-      conv_rate  = 1.0
+      conv_rate   = 1.0
     ),
     class = c("monpwr_results", "data.frame")
   )
@@ -176,19 +178,90 @@ test_that("compute_mdc returns NA when power target not reached", {
   expect_equal(round(mdc$max_power, 1), 0.7)
 })
 
+test_that("retest recalculates power at new alpha", {
+  fake_results <- structure(
+    data.frame(
+      scenario    = "sc1",
+      label       = "Test",
+      group       = "All",
+      horizon     = 10,
+      effect_pct  = 20,
+      power       = 0.5,
+      power_lower = 0.4,
+      power_upper = 0.6,
+      n_plots     = 50,
+      n_future    = 2,
+      n_converged = 10,
+      conv_rate   = 1.0
+    ),
+    class = c("monpwr_results", "data.frame")
+  )
+  fake_results$p_values <- list(c(0.01, 0.03, 0.05, 0.08, 0.12,
+                                  0.15, 0.20, 0.50, 0.80, 0.95))
+
+  retested <- retest(fake_results, alpha = 0.05)
+  expect_equal(retested$power, 0.2)
+
+  retested2 <- retest(fake_results, alpha = 0.20)
+  expect_equal(retested2$power, 0.6)
+})
+
+test_that("retest aborts when p_values missing", {
+  fake <- structure(
+    data.frame(scenario = "s", label = "L", group = "All",
+               horizon = 10, effect_pct = 10, power = 0.5,
+               n_plots = 10, n_future = 2, n_converged = 10, conv_rate = 1),
+    class = c("monpwr_results", "data.frame")
+  )
+  expect_error(retest(fake, alpha = 0.05), "p_values")
+})
+
+test_that("extend concatenates p-values and recomputes power", {
+  make_result <- function(pv) {
+    out <- structure(
+      data.frame(
+        scenario    = "sc1",
+        label       = "Test",
+        group       = "All",
+        horizon     = 10,
+        effect_pct  = 20,
+        power       = NA_real_,
+        power_lower = NA_real_,
+        power_upper = NA_real_,
+        n_plots     = 50,
+        n_future    = 2,
+        n_converged = length(pv),
+        conv_rate   = 1.0
+      ),
+      class = c("monpwr_results", "data.frame")
+    )
+    out$p_values <- list(pv)
+    out
+  }
+
+  r1 <- make_result(c(0.01, 0.05, 0.20, 0.50, 0.90))
+  r2 <- make_result(c(0.02, 0.04, 0.06, 0.30, 0.80))
+
+  combined <- extend(r1, r2, alpha = 0.10)
+  expect_equal(length(combined$p_values[[1]]), 10)
+  expect_equal(combined$power, 0.5)
+})
+
 test_that("compute_mdc returns correct MDC when power target reached", {
   fake_results <- structure(
     data.frame(
-      scenario   = "sc1",
-      label      = "Test",
-      group      = "All",
-      horizon    = 10,
-      effect_pct = c(10, 20, 30),
-      power      = c(0.6, 0.82, 0.95),
-      n_plots    = 50,
-      n_future   = 2,
+      scenario    = "sc1",
+      label       = "Test",
+      group       = "All",
+      horizon     = 10,
+      effect_pct  = c(10, 20, 30),
+      power       = c(0.6, 0.82, 0.95),
+      power_lower = c(0.53, 0.76, 0.91),
+      power_upper = c(0.67, 0.87, 0.98),
+      n_plots     = 50,
+      n_future    = 2,
       n_converged = 200,
-      conv_rate  = 1.0
+      conv_rate   = 1.0
     ),
     class = c("monpwr_results", "data.frame")
   )

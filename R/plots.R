@@ -56,6 +56,13 @@ plot_power <- function(results,
                  fill = .data$label)
   ) +
     ggplot2::geom_col(position = ggplot2::position_dodge(0.8), width = 0.7) +
+    {
+      if (all(c("power_lower", "power_upper") %in% names(dat)))
+        ggplot2::geom_errorbar(
+          ggplot2::aes(ymin = .data$power_lower, ymax = .data$power_upper),
+          position = ggplot2::position_dodge(0.8), width = 0.25
+        )
+    } +
     ggplot2::geom_hline(yintercept = power_target, linetype = "dashed",
                         colour = "firebrick", linewidth = 0.7) +
     ggplot2::facet_wrap(~ paste0("Horizon: ", .data$horizon, " yr")) +
@@ -143,6 +150,13 @@ plot_power_gain <- function(results,
   ) +
     ggplot2::geom_line(ggplot2::aes(group = interaction(.data$label, .data$sim_type))) +
     ggplot2::geom_point(size = 2.5) +
+    {
+      if (all(c("power_lower", "power_upper") %in% names(dat)))
+        ggplot2::geom_errorbar(
+          ggplot2::aes(ymin = .data$power_lower, ymax = .data$power_upper),
+          width = 0.15
+        )
+    } +
     ggplot2::geom_hline(yintercept = power_target, linetype = "dashed",
                         colour = "firebrick", linewidth = 0.7) +
     ggplot2::facet_wrap(~ paste0("Horizon: ", .data$horizon, " yr")) +
@@ -346,7 +360,13 @@ plot_power_grid <- function(results,
   }
 
   dat <- dat |>
-    mutate(power_label = formatC(.data$power, digits = 2, format = "f"))
+    mutate(power_label = if (all(c("power_lower", "power_upper") %in% names(dat)))
+      paste0(formatC(.data$power, digits = 2, format = "f"), "\n[",
+             formatC(.data$power_lower, digits = 2, format = "f"), ", ",
+             formatC(.data$power_upper, digits = 2, format = "f"), "]")
+    else
+      formatC(.data$power, digits = 2, format = "f")
+    )
 
   p <- ggplot2::ggplot(dat, ggplot2::aes(
     x    = factor(.data[[x_var]]),

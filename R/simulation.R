@@ -190,8 +190,17 @@ build_historical <- function(data, site_ids,
 #'
 #' @description
 #' Fits a mixed model to the combined observed + simulated data and returns
-#' the Wald p-value for the visit-sequence coefficient (`visit_num`).
+#' the p-value for the visit-sequence coefficient (`visit_num`).
 #' This is the test statistic used in power estimation.
+#'
+#' Two test types are supported:
+#'
+#' * **`"wald"`** (default) — extracts the z/t-statistic from model
+#'   coefficients.  Fast.
+#' * **`"lrt"`** — likelihood-ratio test comparing the full model to a
+#'   reduced model without the visit coefficient.  More reliable at small
+#'   sample sizes but approximately twice as slow (two model fits per
+#'   replicate).
 #'
 #' The model family used for testing is chosen based on `ref_params$family`:
 #' * `"hurdle_nbinom2"` — `glmmTMB` hurdle (truncated NB2 + ZI random intercept)
@@ -208,8 +217,9 @@ build_historical <- function(data, site_ids,
 #'   `log_effort`, `count`.
 #' @param ref_params A `monpwr_params` object.  Used to select the
 #'   appropriate model family for the test.
+#' @param test Character scalar.  `"wald"` (default) or `"lrt"`.
 #'
-#' @return Numeric scalar — the Wald p-value for `visit_num`, or `NA_real_`
+#' @return Numeric scalar — the p-value for `visit_num`, or `NA_real_`
 #'   on convergence failure.
 #'
 #' @details
@@ -220,12 +230,18 @@ build_historical <- function(data, site_ids,
 #'
 #' @seealso [simulate_visits()], [run_power_sim()]
 #' @export
-fit_and_test <- function(data, ref_params) {
+fit_and_test <- function(data, ref_params, test = c("wald", "lrt")) {
   stopifnot(inherits(ref_params, "monpwr_params"))
+  test <- match.arg(test)
 
   tryCatch({
     fit <- .fit_test_model(data, ref_params$family)
-    .extract_pval(fit, ref_params$family)
+    if (test == "lrt") {
+      fit_null <- .fit_null_model(data, ref_params$family)
+      .extract_lrt_pval(fit, fit_null)
+    } else {
+      .extract_pval(fit, ref_params$family)
+    }
   },
   error   = function(e) NA_real_,
   warning = function(w) NA_real_
@@ -310,4 +326,79 @@ fit_and_test <- function(data, ref_params) {
   }
 
   NA_real_
+}
+
+
+# ------------------------------------------------------------------------------
+# Internal: fit null model (no visit_num) for LRT
+# ------------------------------------------------------------------------------
+
+.fit_null_model <- function(data, family) {
+  suppress_w <- function(expr) {
+    withCallingHandlers(expr, warning = function(w) invokeRestart("muffleWarning"))
+  }
+
+  switch(family,
+
+    hurdle_nbinom2 = suppress_w(
+      glmmTMB::glmmTMB(
+        formula   = count ~ 1 + offset(log_effort) + (1 | plotid),
+        ziformula =       ~ (1 | plotid),
+        family    = glmmTMB::truncated_nbinom2,
+        data      = data,
+        control   = glmmTMB::glmmTMBControl(
+          optCtrl = list(iter.max = 200, eval.max = 300))
+      )
+    ),
+
+    nbinom2 = suppress_w(
+      glmmTMB::glmmTMB(
+        count ~ 1 + offset(log_effort) + (1 | plotid),
+        family  = glmmTMB::nbinom2,
+        data    = data,
+        control = glmmTMB::glmmTMBControl(
+          optCtrl = list(iter.max = 200, eval.max = 300))
+      )
+    ),
+
+    poisson = suppress_w(
+      lme4::glmer(
+        count ~ 1 + offset(log_effort) + (1 | plotid),
+        family = poisson, data = data
+      )
+    ),
+
+    binomial = suppress_w(
+      lme4::glmer(
+        count ~ 1 + (1 | plotid),
+        family = binomial, data = data
+      )
+    ),
+
+    gaussian = suppress_w(
+      lme4::lmer(
+        count ~ 1 + (1 | plotid),
+        data = data
+      )
+    ),
+
+    abort(paste0("No null model implemented for family '", family, "'."))
+  )
+}
+
+
+# ------------------------------------------------------------------------------
+# Internal: extract LRT p-value from full vs null model comparison
+# ------------------------------------------------------------------------------
+
+.extract_lrt_pval <- function(fit_full, fit_null) {
+  if (inherits(fit_full, "glmmTMB")) {
+    ll_full <- as.numeric(stats::logLik(fit_full))
+    ll_null <- as.numeric(stats::logLik(fit_null))
+  } else {
+    ll_full <- as.numeric(stats::logLik(fit_full, REML = FALSE))
+    ll_null <- as.numeric(stats::logLik(fit_null, REML = FALSE))
+  }
+  chisq <- 2 * (ll_full - ll_null)
+  stats::pchisq(chisq, df = 1, lower.tail = FALSE)
 }

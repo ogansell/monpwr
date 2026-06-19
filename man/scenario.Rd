@@ -16,9 +16,8 @@ Determines how many future visits fall within each monitoring horizon:
 
 \item{site_selector}{A function with signature \verb{function(plot_metadata)}
 that takes the \code{plot_metadata} data frame passed to \code{\link[=run_power_sim]{run_power_sim()}}
-and returns a character vector of \code{Place} IDs to retain under this
-scenario.  For a scenario retaining all plots, use
-\code{function(sp) unique(sp$Place)}.}
+and returns a character vector of plot IDs (matching the \code{place_var}
+column) to retain under this scenario.}
 }
 \value{
 A list of class \code{"monpwr_scenario"} with elements \code{label},

@@ -104,6 +104,11 @@ print.monpwr_scenario <- function(x, ...) {
 #' @param n_iter Integer scalar.  Number of simulation replicates per cell.
 #'   Default 200.  Use a smaller value (e.g. 30) for quick smoke-tests.
 #' @param alpha Numeric scalar.  Significance threshold.  Default 0.10.
+#' @param test Character scalar.  `"wald"` (default) or `"lrt"`.  The Wald
+#'   test extracts the z/t-statistic from model coefficients.  The
+#'   likelihood-ratio test (`"lrt"`) compares the full model to a reduced
+#'   model without the visit coefficient; more reliable at small sample
+#'   sizes but slower.
 #' @param group_var Character scalar or `NULL`.  Optional column name in
 #'   `plot_metadata` to stratify results by sub-group.  If `NULL` (default),
 #'   results are reported for all selected sites combined (`group = "All"`).
@@ -125,7 +130,12 @@ print.monpwr_scenario <- function(x, ...) {
 #' @return A data frame (class `"monpwr_results"`) with one row per
 #'   scenario × group × effect size × horizon, and columns:
 #'   `scenario`, `label`, `group`, `effect_pct`, `horizon`,
-#'   `n_plots`, `n_future`, `power`, `n_converged`, `conv_rate`.
+#'   `n_plots`, `n_future`, `power`, `power_lower`, `power_upper`,
+#'   `n_converged`, `conv_rate`, `p_values`.  `power_lower` and
+#'   `power_upper` are exact (Clopper–Pearson) 95\% binomial confidence
+#'   limits.  `p_values` is a list-column of per-replicate raw p-values
+#'   (`NA` for non-converged fits), enabling [retest()] at alternative
+#'   alpha levels and [extend()] to accumulate additional iterations.
 #'
 #' @examples
 #' \dontrun{
@@ -167,6 +177,7 @@ run_power_sim <- function(ref_params,
                           horizons         = c(10, 20),
                           n_iter           = 200L,
                           alpha            = 0.10,
+                          test             = c("wald", "lrt"),
                           group_var        = NULL,
                           place_var        = NULL,
                           init_fn          = NULL,
@@ -174,6 +185,7 @@ run_power_sim <- function(ref_params,
                           ...) {
 
   mode <- match.arg(mode)
+  test <- match.arg(test)
 
   # --- Validation ------------------------------------------------------------
   stopifnot(inherits(ref_params, "monpwr_params"))
@@ -251,6 +263,7 @@ run_power_sim <- function(ref_params,
             ref_params  = ref_params,
             n_iter      = n_iter,
             alpha       = alpha,
+            test        = test,
             mode        = mode,
             draw_re     = (mode == "prospective")
           ) |>
@@ -264,6 +277,8 @@ run_power_sim <- function(ref_params,
 
   out <- bind_rows(all_results)
   class(out) <- c("monpwr_results", class(out))
+  attr(out, "test")  <- test
+  attr(out, "alpha") <- alpha
   out
 }
 
@@ -321,10 +336,17 @@ run_power_sim <- function(ref_params,
 # ------------------------------------------------------------------------------
 
 .run_one_cell <- function(plot_state, hist_dat, n_future, effect_pct,
-                          ref_params, n_iter, alpha, mode, draw_re) {
+                          ref_params, n_iter, alpha, test, mode, draw_re) {
   eff_log <- log(1 + effect_pct / 100)
 
+  cli::cli_progress_bar(
+    format = "  {effect_pct}% effect | {n_future} visits | {cli::pb_bar} {cli::pb_percent} [{cli::pb_eta_str}]",
+    total = n_iter, clear = TRUE,
+    .envir = environment()
+  )
+
   p_vals <- map_dbl(seq_len(n_iter), function(i) {
+    cli::cli_progress_update(.envir = parent.env(environment()))
     future_dat <- simulate_visits(plot_state, n_future, eff_log, ref_params,
                                   draw_re = draw_re)
     combined <- if (!is.null(hist_dat)) {
@@ -332,19 +354,26 @@ run_power_sim <- function(ref_params,
     } else {
       future_dat
     }
-    fit_and_test(combined, ref_params)
+    fit_and_test(combined, ref_params, test = test)
   })
 
+  cli::cli_progress_done(.envir = environment())
+
   n_conv <- sum(!is.na(p_vals))
-  power  <- mean(p_vals < alpha, na.rm = TRUE)
+  n_sig  <- sum(p_vals < alpha, na.rm = TRUE)
+  power  <- if (n_conv > 0) n_sig / n_conv else NA_real_
+  ci     <- if (n_conv > 0) stats::binom.test(n_sig, n_conv)$conf.int else c(NA_real_, NA_real_)
 
   tibble(
     n_plots     = nrow(plot_state),
     n_future    = n_future,
     effect_pct  = effect_pct,
     power       = power,
+    power_lower = ci[1],
+    power_upper = ci[2],
     n_converged = n_conv,
-    conv_rate   = round(n_conv / n_iter, 3)
+    conv_rate   = round(n_conv / n_iter, 3),
+    p_values    = list(p_vals)
   )
 }
 
@@ -361,7 +390,19 @@ print.monpwr_results <- function(x, ...) {
     "*" = paste0("Groups:       ", paste(unique(x$group), collapse = ", ")),
     "*" = paste0("Effect sizes: ", paste(sort(unique(x$effect_pct)), collapse = ", "), "%"),
     "*" = paste0("Horizons:     ", paste(sort(unique(x$horizon)), collapse = ", "), " yr"),
-    "*" = paste0("Rows:         ", nrow(x))
+    "*" = paste0("Rows:         ", nrow(x)),
+    "*" = if (all(c("power_lower", "power_upper") %in% names(x)))
+      "Power CIs:    Clopper–Pearson 95%"
+    else
+      "Power CIs:    not available",
+    "*" = if ("test" %in% names(attributes(x)))
+      paste0("Test:         ", attr(x, "test"))
+    else
+      "Test:         wald",
+    "*" = if ("p_values" %in% names(x))
+      "Raw p-values: stored (use retest() / extend())"
+    else
+      "Raw p-values: not available"
   ))
   invisible(x)
 }

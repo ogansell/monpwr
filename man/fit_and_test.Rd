@@ -4,7 +4,7 @@
 \alias{fit_and_test}
 \title{Fit a trend model and return the p-value for the visit coefficient}
 \usage{
-fit_and_test(data, ref_params)
+fit_and_test(data, ref_params, test = c("wald", "lrt"))
 }
 \arguments{
 \item{data}{A data frame — the combined observed + simulated dataset for
@@ -13,15 +13,27 @@ one simulation replicate.  Must contain \code{plotid}, \code{visit_num},
 
 \item{ref_params}{A \code{monpwr_params} object.  Used to select the
 appropriate model family for the test.}
+
+\item{test}{Character scalar.  \code{"wald"} (default) or \code{"lrt"}.}
 }
 \value{
-Numeric scalar — the Wald p-value for \code{visit_num}, or \code{NA_real_}
+Numeric scalar — the p-value for \code{visit_num}, or \code{NA_real_}
 on convergence failure.
 }
 \description{
 Fits a mixed model to the combined observed + simulated data and returns
-the Wald p-value for the visit-sequence coefficient (\code{visit_num}).
+the p-value for the visit-sequence coefficient (\code{visit_num}).
 This is the test statistic used in power estimation.
+
+Two test types are supported:
+\itemize{
+\item \strong{\code{"wald"}} (default) — extracts the z/t-statistic from model
+coefficients.  Fast.
+\item \strong{\code{"lrt"}} — likelihood-ratio test comparing the full model to a
+reduced model without the visit coefficient.  More reliable at small
+sample sizes but approximately twice as slow (two model fits per
+replicate).
+}
 
 The model family used for testing is chosen based on \code{ref_params$family}:
 \itemize{

@@ -12,16 +12,16 @@ compute_mdc(results, power_target = 0.8)
 \item{power_target}{Numeric scalar.  Target power level.  Default 0.80.}
 }
 \value{
-A data frame with one row per scenario × sim_type × scale × group
-× horizon, and columns: \code{scenario}, \code{label}, \code{sim_type}, \code{scale},
-\code{group}, \code{horizon}, \code{n_legacy}, \code{n_new}, \code{n_total}, \code{n_future},
+A data frame with one row per scenario × sim_type × group × horizon,
+and columns: \code{scenario}, \code{label}, \code{sim_type}, \code{group}, \code{horizon},
+\code{n_legacy}, \code{n_new}, \code{n_total}, \code{n_future},
 \code{mdc_pct} (\code{NA} if target not achieved within tested effect sizes),
 \code{max_power}.
 }
 \description{
 Derives the minimum detectable change (MDC) for each scenario × sim_type ×
-scale × group × horizon combination: the smallest effect size (\% change per
-visit) at which power reaches \code{power_target}.
+group × horizon combination: the smallest effect size (\% change per visit)
+at which power reaches \code{power_target}.
 
 For hybrid scenarios, the \code{sim_type} column distinguishes between the
 combined (legacy + new sites) and the legacy-only traces, allowing the
