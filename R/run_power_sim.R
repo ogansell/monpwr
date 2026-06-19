@@ -177,7 +177,7 @@ run_power_sim <- function(ref_params,
                           park_type_var    = "Park_type",
                           park_name_var    = "PCL_Name",
                           n_min_park       = 5L,
-                          place_var        = "Place",
+                          place_var        = NULL,
                           init_fn          = NULL,
                           workers          = NULL,
                           ...) {
@@ -192,6 +192,7 @@ run_power_sim <- function(ref_params,
   if (mode == "conditional" && is.null(data)) {
     abort("`data` is required for `mode = 'conditional'`.")
   }
+  place_var <- place_var %||% ref_params$place_var %||% "Place"
   if (!place_var %in% names(plot_metadata)) {
     abort(paste0("`place_var` column '", place_var, "' not found in `plot_metadata`."))
   }
