@@ -4,63 +4,29 @@
 \alias{scenario}
 \title{Define a monitoring design scenario}
 \usage{
-scenario(
-  label,
-  remeasure_yrs,
-  site_selector,
-  n_new_sites = 0L,
-  eta_offset_cond = 0,
-  eta_offset_zi = eta_offset_cond,
-  new_site_init_fn = NULL
-)
+scenario(label, remeasure_yrs, site_selector)
 }
 \arguments{
-\item{label}{Character scalar.  Human-readable label for plots and tables.}
+\item{label}{Character scalar.  Human-readable label used in plots and
+tables (e.g. \code{"8x8km grid, 5-yr interval"}).}
 
-\item{remeasure_yrs}{Positive numeric scalar.  Remeasurement interval in
-years.  Determines how many future visits fall within each monitoring
-horizon: \code{n_future = max(1L, floor(horizon / remeasure_yrs))}.}
+\item{remeasure_yrs}{Numeric scalar.  Remeasurement interval in years.
+Determines how many future visits fall within each monitoring horizon:
+\code{n_future = floor(horizon / remeasure_yrs)}.}
 
-\item{site_selector}{A function with signature
-\verb{function(plot_metadata) -> character vector} that returns the IDs of
-\strong{legacy} sites to retain under this scenario.  Receives the
-\code{plot_metadata} data frame passed to \code{\link[=run_power_sim]{run_power_sim()}}.  May use any
-column in that frame.  For a scenario retaining all plots, use
-\code{function(sp) unique(sp[[place_var]])}.}
-
-\item{n_new_sites}{Non-negative integer scalar.  Number of \strong{new} sites
-to add (no prior record).  Default \code{0L} (legacy-only scenario).}
-
-\item{eta_offset_cond}{Numeric scalar.  Shift on the marginal conditional
-intercept for new sites (log scale).  Default \code{0}.  Positive values mean
-new sites are expected to have higher baseline counts than the population
-average; negative for lower.  Passed to \code{\link[=init_new_sites]{init_new_sites()}}.}
-
-\item{eta_offset_zi}{Numeric scalar.  Same shift for the ZI component.
-Defaults to \code{eta_offset_cond}.}
-
-\item{new_site_init_fn}{Function or \code{NULL}.  Custom initialiser for new
-sites with signature \verb{function(ref_params, n_new, ...)}.  If \code{NULL},
-\code{\link[=init_new_sites]{init_new_sites()}} is used.  Ignored when \code{n_new_sites = 0}.}
+\item{site_selector}{A function with signature \verb{function(plot_metadata)}
+that takes the \code{plot_metadata} data frame passed to \code{\link[=run_power_sim]{run_power_sim()}}
+and returns a character vector of \code{Place} IDs to retain under this
+scenario.  For a scenario retaining all plots, use
+\code{function(sp) unique(sp$Place)}.}
 }
 \value{
-A list of class \code{"monpwr_scenario"}.
+A list of class \code{"monpwr_scenario"} with elements \code{label},
+\code{remeasure_yrs}, and \code{site_selector}.
 }
 \description{
 Constructs a scenario object — a named list describing a single monitoring
 design option.  Scenarios are passed as a named list to \code{\link[=run_power_sim]{run_power_sim()}}.
-
-Supports three design types depending on \code{n_new_sites}:
-\itemize{
-\item \strong{Legacy-only} (\code{n_new_sites = 0}) — only existing plots with an
-observed temporal record.  Uses conditional simulation throughout.
-\item \strong{Prospective} — set \code{mode = "prospective"} in \code{\link[=run_power_sim]{run_power_sim()}};
-\code{n_new_sites} is then the total number of plots (all from scratch).
-\item \strong{Hybrid} (\code{n_new_sites > 0}, \code{mode = "conditional"}) — a mix of
-existing legacy plots and new plots with no prior record.  Legacy plots
-use conditional initialisation; new plots use \code{\link[=init_new_sites]{init_new_sites()}}.  Both
-a combined (legacy + new) and a legacy-only power trace are returned.
-}
 }
 \examples{
 \dontrun{
@@ -68,23 +34,22 @@ scenarios <- list(
   baseline = scenario(
     label         = "Full grid, 5-yr",
     remeasure_yrs = 5,
-    site_selector = function(sp) unique(sp$site_id)
+    site_selector = function(sp) unique(sp$Place)
   ),
-  hybrid = scenario(
-    label         = "Coarse grid + 30 new sites, 5-yr",
+  coarse = scenario(
+    label         = "Coarse grid, 5-yr",
     remeasure_yrs = 5,
-    site_selector = function(sp) sp$site_id[sp$in_coarse_grid],
-    n_new_sites   = 30L
+    site_selector = function(sp) sp$Place[sp$in_coarse_grid]
   ),
   extended = scenario(
     label         = "Full grid, 10-yr",
     remeasure_yrs = 10,
-    site_selector = function(sp) unique(sp$site_id)
+    site_selector = function(sp) unique(sp$Place)
   )
 )
 }
 
 }
 \seealso{
-\code{\link[=run_power_sim]{run_power_sim()}}, \code{\link[=init_new_sites]{init_new_sites()}}
+\code{\link[=run_power_sim]{run_power_sim()}}
 }

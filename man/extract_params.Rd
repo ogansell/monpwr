@@ -14,7 +14,9 @@ extract_params(
   visit_num_var = "visit_num",
   plotid_var = "plotid_model",
   place_var = "Place",
-  visit_gap_var = "visit_gap",
+  offset_var = NULL,
+  offset_transform = NULL,
+  log_effort_future = NULL,
   ...
 )
 
@@ -24,7 +26,9 @@ extract_params(
   visit_num_var = "visit_num",
   plotid_var = "plotid_model",
   place_var = "Place",
-  visit_gap_var = "visit_gap",
+  offset_var = NULL,
+  offset_transform = NULL,
+  log_effort_future = NULL,
   ...
 )
 
@@ -34,7 +38,9 @@ extract_params(
   visit_num_var = "visit_num",
   plotid_var = "plotid_model",
   place_var = "Place",
-  visit_gap_var = "visit_gap",
+  offset_var = NULL,
+  offset_transform = NULL,
+  log_effort_future = NULL,
   ...
 )
 
@@ -44,7 +50,9 @@ extract_params(
   visit_num_var = "visit_num",
   plotid_var = "plotid_model",
   place_var = "Place",
-  visit_gap_var = "visit_gap",
+  offset_var = NULL,
+  offset_transform = NULL,
+  log_effort_future = NULL,
   ...
 )
 
@@ -54,7 +62,6 @@ extract_params(
   visit_num_var = "visit_num",
   plotid_var = "plotid_model",
   place_var = "Place",
-  visit_gap_var = "visit_gap",
   ...
 )
 }
@@ -68,57 +75,54 @@ an informative error explaining how to write a custom extractor.
 }}
 
 \item{data}{A \strong{plain \code{data.frame}} — the dataset used to fit \code{fit},
-one row per plot × visit.  Must contain at minimum the columns named
-by \code{visit_num_var}, \code{plotid_var}, and \code{place_var}.}
+one row per plot × visit.  Must contain at minimum:
+\itemize{
+\item \code{Place} — plot identifier (character or factor)
+\item \code{plotid_model} — plot ID as used in the model random effect (character
+or factor; often the same as \code{Place})
+\item \code{visit_num} — visit sequence number (integer, 1 = first visit)
+\item \code{visit_gap} — years since previous visit (numeric; used for nuisance
+fixing in simulation; can be \code{NA} or a constant if not in model)
+}}
 
-\item{visit_num_var}{Character scalar.  Name of the visit sequence column.
-Default \code{"visit_num"}.}
+\item{visit_num_var}{Character scalar.  Name of the column in \code{data}
+representing the visit sequence number.  Default \code{"visit_num"}.}
 
 \item{plotid_var}{Character scalar.  Name of the random-effect grouping
-column.  Default \code{"plotid_model"}.}
+column in \code{data}.  Default \code{"plotid_model"}.}
 
-\item{place_var}{Character scalar.  Name of the site identifier column.
-Default \code{"Place"}.}
-
-\item{visit_gap_var}{Character scalar.  Name of the visit-gap column used
-as a nuisance covariate.  Default \code{"visit_gap"}.  Set to \code{NULL} or a
-column not present in \code{data} to treat the gap effect as zero.}
+\item{place_var}{Character scalar.  Name of the plot identifier column
+in \code{data}.  Default \code{"Place"}.}
 
 \item{...}{Additional arguments passed to the specific method.}
 }
 \value{
 A named list of class \code{"monpwr_params"} with elements:
 \describe{
-\item{\code{beta_visit}}{Numeric scalar. Fixed-effect coefficient for
-\code{visit_num_var} in the conditional/count component — the trend
-parameter under test.}
-\item{\code{beta_gap_cond}}{Numeric scalar. Coefficient for the visit-gap
-variable in the conditional component; \code{0} if not in model.}
-\item{\code{beta_gap_zi}}{Numeric scalar. Coefficient for the visit-gap
-variable in the ZI component; \code{0} if not in model or model has no ZI.}
+\item{\code{beta_visit}}{Numeric scalar. Fixed-effect coefficient for the
+visit sequence variable in the conditional/count component. This is
+the trend parameter under test.}
+\item{\code{beta_gap_cond}}{Numeric scalar. Coefficient for \code{visit_gap} in
+the conditional component; \code{0} if not in model.}
+\item{\code{beta_gap_zi}}{Numeric scalar. Coefficient for \code{visit_gap} in
+the ZI component; \code{0} if not in model or model has no ZI.}
 \item{\code{disp_par}}{Numeric scalar. Dispersion parameter. NB2 \code{phi};
-\code{1} for Poisson; residual SD for Gaussian; \code{1} for binomial.}
+\code{1} for Poisson; \code{Inf} for Gaussian (unused); binomial \code{1}.}
 \item{\code{sigma_cond}}{Numeric scalar. SD of the plot-level random
 intercept in the conditional/count component.}
 \item{\code{sigma_zi}}{Numeric scalar. SD of the plot-level random intercept
 in the ZI component; \code{0} if model has no ZI component.}
-\item{\code{visit_gap_med}}{Numeric scalar. Median visit-gap across \code{data},
+\item{\code{visit_gap_med}}{Numeric scalar. Median \code{visit_gap} across \code{data},
 used as a fixed nuisance value when simulating future visits.}
-\item{\code{marginal_int_cond}}{Numeric scalar. Population-level intercept
-for the conditional component at \code{visit_num = 0}.  Used to initialise
-new sites in hybrid scenarios via \code{\link[=init_new_sites]{init_new_sites()}}.}
-\item{\code{marginal_int_zi}}{Numeric scalar. Population-level intercept for
-the ZI component.  Used to initialise new sites in hybrid scenarios.}
 \item{\code{family}}{Character scalar. One of \code{"hurdle_nbinom2"},
 \code{"nbinom2"}, \code{"poisson"}, \code{"binomial"}, \code{"gaussian"}.}
 \item{\code{visit_num_var}}{Character scalar. Passed through from argument.}
 \item{\code{plotid_var}}{Character scalar. Passed through from argument.}
 \item{\code{place_var}}{Character scalar. Passed through from argument.}
-\item{\code{visit_gap_var}}{Character scalar. Passed through from argument.}
 \item{\code{plot_state}}{Data frame, one row per unique plot. Columns:
 \code{Place}, \code{plotid_model}, \code{visit_num} (last observed), \code{eta_last_cond},
 \code{eta_last_zi}, \code{blup_cond}, \code{blup_zi}. Used by \code{\link[=init_conditional]{init_conditional()}}
-and as a reference for prospective/hybrid initialisers.}
+and as a template for prospective initialisers.}
 }
 }
 \description{
@@ -126,7 +130,7 @@ Extracts all parameters needed to drive the \code{monpwr} simulation engine
 from a fitted model object.  Dispatches on \code{class(fit)}, with methods
 provided for \code{glmmTMB} and \code{lme4} model objects.
 
-The returned \code{monpwr_params} list has a \strong{fixed structure regardless of
+The returned \code{ref_params} list has a \strong{fixed structure regardless of
 model family} — this is the contract that allows the simulation engine,
 initialisers, and plotting functions to be completely model-agnostic.
 }
@@ -138,18 +142,15 @@ Supports \code{truncated_nbinom2} (hurdle), \code{nbinom2}, \code{poisson}, and
 is derived from \code{family(fit)$family} and the presence of a non-trivial
 ZI formula.
 
-\code{sigma_cond} and \code{sigma_zi} are extracted via \code{\link[lme4:VarCorr]{lme4::VarCorr()}}.  The
-function stops with an informative error on VarCorr failure — it does
-\strong{not} fall back to positional TMB theta parameters, which would be
-silently wrong.
+\code{sigma_cond} and \code{sigma_zi} are extracted via \code{\link[lme4:VarCorr]{lme4::VarCorr()}}.  If
+extraction fails (e.g. non-positive-definite Hessian), the function stops
+with an error — it does \strong{not} fall back to positional TMB theta
+parameters, which would be silently wrong.
 
-\code{marginal_int_cond} and \code{marginal_int_zi} are recovered by back-computing
-from the earliest observed visit rather than reading the raw fixed-effect
-intercept, which may be confounded with other baseline covariates.
-
-If \code{visit_num_var} is involved in an interaction term, \code{beta_visit} is the
+If \code{visit_num} is involved in an interaction term, \code{beta_visit} is the
 main effect only.  Interaction contributions are absorbed into the per-plot
-\code{eta_last_cond} via \code{predict(..., re.form = NULL)}.
+\code{eta_last_cond} via \code{predict(..., re.form = NULL)}, so the starting
+linear predictor is correct for each plot's observed covariates.
 }
 
 \subsection{\code{lme4} method (\code{glmerMod} / \code{lmerMod})}{
@@ -159,7 +160,7 @@ For \code{lmerMod} (Gaussian), \code{disp_par} is set to \code{sigma(fit)} (resi
 and \code{family} is \code{"gaussian"}.
 
 There is no ZI component in \code{lme4} models; \code{beta_gap_zi}, \code{sigma_zi},
-\code{marginal_int_zi}, and \code{blup_zi} are all \code{0}.
+and \code{blup_zi} are all \code{0}.
 }
 }
 \examples{
@@ -183,6 +184,6 @@ ref2 <- extract_params(fit2, data = long_model)
 
 }
 \seealso{
-\code{\link[=init_conditional]{init_conditional()}}, \code{\link[=init_new_sites]{init_new_sites()}},
-\code{\link[=init_prospective_marginal]{init_prospective_marginal()}}, \code{\link[=run_power_sim]{run_power_sim()}}
+\code{\link[=init_conditional]{init_conditional()}}, \code{\link[=init_prospective_marginal]{init_prospective_marginal()}},
+\code{\link[=run_power_sim]{run_power_sim()}}
 }

@@ -2,52 +2,40 @@
 % Please edit documentation in R/simulation.R
 \name{build_historical}
 \alias{build_historical}
-\title{Build the historical data stub for legacy plots}
+\title{Build the historical data stub for retained plots}
 \usage{
 build_historical(
   data,
   site_ids,
   place_var = "Place",
   plotid_var = "plotid_model",
-  visit_num_var = "visit_num",
-  log_effort_var = "log_effort",
-  count_var = "count"
+  offset_var = NULL
 )
 }
 \arguments{
 \item{data}{A data frame — the full modelling dataset, one row per plot ×
-visit.}
+visit.  Must contain \code{Place}, \code{visit_num}, \code{log_effort}, and \code{count}
+columns (or the equivalents specified via \code{place_var} etc. in
+\code{\link[=extract_params]{extract_params()}}; the defaults are used here).}
 
-\item{site_ids}{Character vector.  Legacy site IDs to retain.}
+\item{site_ids}{Character vector.  Plot \code{Place} IDs to retain.}
 
-\item{place_var}{Character scalar.  Name of the site ID column in \code{data}.
+\item{place_var}{Character scalar.  Name of the plot ID column in \code{data}.
 Default \code{"Place"}.}
 
-\item{plotid_var}{Character scalar.  Name of the model grouping column in
-\code{data}.  Default \code{"plotid_model"}.  This becomes the \code{plotid} column in
-the returned stub (matched by \code{\link[=fit_and_test]{fit_and_test()}}).}
-
-\item{visit_num_var}{Character scalar.  Name of the visit sequence column.
-Default \code{"visit_num"}.}
-
-\item{log_effort_var}{Character scalar.  Name of the log-effort offset
-column.  Default \code{"log_effort"}.}
-
-\item{count_var}{Character scalar.  Name of the response count column.
-Default \code{"count"}.}
+\item{plotid_var}{Character scalar.  Name of the model grouping column.
+Default \code{"plotid_model"}.  This becomes the \code{plotid} column in the
+output (used by \code{\link[=fit_and_test]{fit_and_test()}}).}
 }
 \value{
 A data frame with columns \code{plotid}, \code{visit_num}, \code{log_effort},
 \code{count}, \code{source} (\code{"observed"}).
 }
 \description{
-Extracts the observed monitoring record for a set of retained legacy plots
-from the full modelling dataset.  The historical stub is stacked with
-simulated future data in \code{\link[=run_power_sim]{run_power_sim()}} (conditional and hybrid modes)
-so that the trend model sees the full temporal record.
-
-New plots (in hybrid scenarios) have no historical record and must not be
-included in \code{site_ids} here.  Pass only legacy site IDs.
+Extracts the observed monitoring record for a set of retained plots from
+the full modelling dataset.  The historical stub is stacked with simulated
+future data in \code{\link[=run_power_sim]{run_power_sim()}} (conditional mode) so that the trend model
+sees the full temporal record — existing visits + future visits.
 
 In prospective mode this function is not called; the trend model sees only
 simulated future data.

@@ -11,36 +11,35 @@ fit_and_test(data, ref_params)
 one simulation replicate.  Must contain \code{plotid}, \code{visit_num},
 \code{log_effort}, \code{count}.}
 
-\item{ref_params}{A \code{monpwr_params} object.  Used to select the test model
-family and retrieve \code{visit_num_var}.}
+\item{ref_params}{A \code{monpwr_params} object.  Used to select the
+appropriate model family for the test.}
 }
 \value{
 Numeric scalar — the Wald p-value for \code{visit_num}, or \code{NA_real_}
 on convergence failure.
 }
 \description{
-Fits a simplified mixed model to the combined observed + simulated data and
-returns the Wald p-value for the visit-sequence coefficient.  This is the
-test statistic used in power estimation.
+Fits a mixed model to the combined observed + simulated data and returns
+the Wald p-value for the visit-sequence coefficient (\code{visit_num}).
+This is the test statistic used in power estimation.
 
-The test model family is chosen automatically based on \code{ref_params$family}:
+The model family used for testing is chosen based on \code{ref_params$family}:
 \itemize{
-\item \code{"hurdle_nbinom2"} — \code{glmmTMB} hurdle (truncated NB2 + ZI random
-intercept)
+\item \code{"hurdle_nbinom2"} — \code{glmmTMB} hurdle (truncated NB2 + ZI random intercept)
 \item \code{"nbinom2"} — \code{glmmTMB} NB2
 \item \code{"poisson"} — \code{glmer} Poisson
 \item \code{"binomial"} — \code{glmer} binomial
 \item \code{"gaussian"} — \code{lmer} Gaussian
 }
 
-Convergence failures return \code{NA_real_} silently.  The proportion of
-\code{NA} values is reported as \code{conv_rate} in \code{\link[=run_power_sim]{run_power_sim()}} output.
+Convergence failures return \code{NA_real_} silently; the proportion of
+\code{NA} values is tracked as \code{conv_rate} in \code{\link[=run_power_sim]{run_power_sim()}} output.
 }
 \details{
-The test model omits all fixed covariates beyond \code{visit_num} (no group,
-spatial, or habitat terms).  These are absorbed into the plot-level random
-intercept, giving conservative power estimates that are consistent with
-typical monitoring programme reporting practice.
+The test model is intentionally simpler than the data-generating model
+(no fixed effects for park, forest, spatial terms) — these are absorbed
+into the plot-level random intercept.  This gives conservative power
+estimates and is consistent with typical FPI reporting practice.
 }
 \seealso{
 \code{\link[=simulate_visits]{simulate_visits()}}, \code{\link[=run_power_sim]{run_power_sim()}}

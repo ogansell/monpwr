@@ -5,7 +5,7 @@
 #' from a fitted model object.  Dispatches on `class(fit)`, with methods
 #' provided for `glmmTMB` and `lme4` model objects.
 #'
-#' The returned `monpwr_params` list has a **fixed structure regardless of
+#' The returned `ref_params` list has a **fixed structure regardless of
 #' model family** — this is the contract that allows the simulation engine,
 #' initialisers, and plotting functions to be completely model-agnostic.
 #'
@@ -15,55 +15,51 @@
 #'   * Anything else — via [extract_params.default()], which stops with
 #'     an informative error explaining how to write a custom extractor.
 #' @param data A **plain `data.frame`** — the dataset used to fit `fit`,
-#'   one row per plot × visit.  Must contain at minimum the columns named
-#'   by `visit_num_var`, `plotid_var`, and `place_var`.
-#' @param visit_num_var Character scalar.  Name of the visit sequence column.
-#'   Default `"visit_num"`.
+#'   one row per plot × visit.  Must contain at minimum:
+#'   * `Place` — plot identifier (character or factor)
+#'   * `plotid_model` — plot ID as used in the model random effect (character
+#'     or factor; often the same as `Place`)
+#'   * `visit_num` — visit sequence number (integer, 1 = first visit)
+#'   * `visit_gap` — years since previous visit (numeric; used for nuisance
+#'     fixing in simulation; can be `NA` or a constant if not in model)
+#' @param visit_num_var Character scalar.  Name of the column in `data`
+#'   representing the visit sequence number.  Default `"visit_num"`.
 #' @param plotid_var Character scalar.  Name of the random-effect grouping
-#'   column.  Default `"plotid_model"`.
-#' @param place_var Character scalar.  Name of the site identifier column.
-#'   Default `"Place"`.
-#' @param visit_gap_var Character scalar.  Name of the visit-gap column used
-#'   as a nuisance covariate.  Default `"visit_gap"`.  Set to `NULL` or a
-#'   column not present in `data` to treat the gap effect as zero.
+#'   column in `data`.  Default `"plotid_model"`.
+#' @param place_var Character scalar.  Name of the plot identifier column
+#'   in `data`.  Default `"Place"`.
 #' @param ... Additional arguments passed to the specific method.
 #'
 #' @return A named list of class `"monpwr_params"` with elements:
 #' \describe{
-#'   \item{`beta_visit`}{Numeric scalar. Fixed-effect coefficient for
-#'     `visit_num_var` in the conditional/count component — the trend
-#'     parameter under test.}
-#'   \item{`beta_gap_cond`}{Numeric scalar. Coefficient for the visit-gap
-#'     variable in the conditional component; `0` if not in model.}
-#'   \item{`beta_gap_zi`}{Numeric scalar. Coefficient for the visit-gap
-#'     variable in the ZI component; `0` if not in model or model has no ZI.}
+#'   \item{`beta_visit`}{Numeric scalar. Fixed-effect coefficient for the
+#'     visit sequence variable in the conditional/count component. This is
+#'     the trend parameter under test.}
+#'   \item{`beta_gap_cond`}{Numeric scalar. Coefficient for `visit_gap` in
+#'     the conditional component; `0` if not in model.}
+#'   \item{`beta_gap_zi`}{Numeric scalar. Coefficient for `visit_gap` in
+#'     the ZI component; `0` if not in model or model has no ZI.}
 #'   \item{`disp_par`}{Numeric scalar. Dispersion parameter. NB2 `phi`;
-#'     `1` for Poisson; residual SD for Gaussian; `1` for binomial.}
+#'     `1` for Poisson; `Inf` for Gaussian (unused); binomial `1`.}
 #'   \item{`sigma_cond`}{Numeric scalar. SD of the plot-level random
 #'     intercept in the conditional/count component.}
 #'   \item{`sigma_zi`}{Numeric scalar. SD of the plot-level random intercept
 #'     in the ZI component; `0` if model has no ZI component.}
-#'   \item{`visit_gap_med`}{Numeric scalar. Median visit-gap across `data`,
+#'   \item{`visit_gap_med`}{Numeric scalar. Median `visit_gap` across `data`,
 #'     used as a fixed nuisance value when simulating future visits.}
-#'   \item{`marginal_int_cond`}{Numeric scalar. Population-level intercept
-#'     for the conditional component at `visit_num = 0`.  Used to initialise
-#'     new sites in hybrid scenarios via [init_new_sites()].}
-#'   \item{`marginal_int_zi`}{Numeric scalar. Population-level intercept for
-#'     the ZI component.  Used to initialise new sites in hybrid scenarios.}
 #'   \item{`family`}{Character scalar. One of `"hurdle_nbinom2"`,
 #'     `"nbinom2"`, `"poisson"`, `"binomial"`, `"gaussian"`.}
 #'   \item{`visit_num_var`}{Character scalar. Passed through from argument.}
 #'   \item{`plotid_var`}{Character scalar. Passed through from argument.}
 #'   \item{`place_var`}{Character scalar. Passed through from argument.}
-#'   \item{`visit_gap_var`}{Character scalar. Passed through from argument.}
 #'   \item{`plot_state`}{Data frame, one row per unique plot. Columns:
 #'     `Place`, `plotid_model`, `visit_num` (last observed), `eta_last_cond`,
 #'     `eta_last_zi`, `blup_cond`, `blup_zi`. Used by [init_conditional()]
-#'     and as a reference for prospective/hybrid initialisers.}
+#'     and as a template for prospective initialisers.}
 #' }
 #'
-#' @seealso [init_conditional()], [init_new_sites()],
-#'   [init_prospective_marginal()], [run_power_sim()]
+#' @seealso [init_conditional()], [init_prospective_marginal()],
+#'   [run_power_sim()]
 #'
 #' @examples
 #' \dontrun{
@@ -86,10 +82,12 @@
 #'
 #' @export
 extract_params <- function(fit, data,
-                           visit_num_var = "visit_num",
-                           plotid_var    = "plotid_model",
-                           place_var     = "Place",
-                           visit_gap_var = "visit_gap",
+                           visit_num_var     = "visit_num",
+                           plotid_var        = "plotid_model",
+                           place_var         = "Place",
+                           offset_var        = NULL,
+                           offset_transform  = NULL,
+                           log_effort_future = NULL,
                            ...) {
   UseMethod("extract_params")
 }
@@ -100,7 +98,7 @@ extract_params <- function(fit, data,
 # ------------------------------------------------------------------------------
 
 .validate_extract_inputs <- function(data, visit_num_var, plotid_var, place_var) {
-  if (!is.data.frame(data) || inherits(data, "tbl_df")) {
+  if (!identical(class(data), "data.frame")) {
     abort(c(
       "`data` must be a plain data.frame.",
       i = "Call `as.data.frame(data)` before passing to `extract_params()`.",
@@ -119,26 +117,40 @@ extract_params <- function(fit, data,
   invisible(NULL)
 }
 
+# Materialise a log-effort vector from data given the three offset strategies.
+# Returns a numeric vector of length nrow(data) and a scalar log_effort_future.
+.resolve_offset <- function(data, offset_var, offset_transform, log_effort_future) {
+  log_eff <- if (!is.null(offset_var)) {
+    if (!offset_var %in% names(data)) {
+      abort(c(
+        paste0("`offset_var` column '", offset_var, "' not found in `data`."),
+        i = "Supply the correct column name or use `offset_transform` for inline offsets."
+      ))
+    }
+    data[[offset_var]]
+  } else if (!is.null(offset_transform)) {
+    if (!is.function(offset_transform)) {
+      abort("`offset_transform` must be a function of the form function(data) -> numeric vector.")
+    }
+    result <- offset_transform(data)
+    if (!is.numeric(result) || length(result) != nrow(data)) {
+      abort("`offset_transform` must return a numeric vector with one value per row of `data`.")
+    }
+    result
+  } else {
+    rep(0, nrow(data))
+  }
 
-# Derive visit_gap_med and gap slopes from data and fixed-effect vectors.
-# Returns list(beta_gap_cond, beta_gap_zi, visit_gap_med).
-.extract_gap_params <- function(fe_cond, fe_zi = NULL,
-                                data, visit_gap_var = "visit_gap") {
-  has_gap <- !is.null(visit_gap_var) && visit_gap_var %in% names(data)
-  list(
-    beta_gap_cond = if (!is.null(fe_cond) && visit_gap_var %in% names(fe_cond))
-      fe_cond[[visit_gap_var]] else 0,
-    beta_gap_zi   = if (!is.null(fe_zi) && visit_gap_var %in% names(fe_zi))
-      fe_zi[[visit_gap_var]] else 0,
-    visit_gap_med = if (has_gap) median(data[[visit_gap_var]], na.rm = TRUE) else 0
-  )
+  future_val <- log_effort_future %||% median(log_eff, na.rm = TRUE)
+
+  list(log_eff = log_eff, log_effort_future = future_val)
 }
 
 
-# Extract plot_state from fitted predictions + BLUPs.
 .extract_plot_state <- function(fit, data, visit_num_var, plotid_var,
                                 place_var, blups_cond, blups_zi,
                                 predict_cond_fn, predict_zi_fn) {
+  # Last observed visit per plot
   last_visit <- data |>
     group_by(.data[[place_var]], .data[[plotid_var]]) |>
     slice_max(.data[[visit_num_var]], n = 1, with_ties = FALSE) |>
@@ -173,26 +185,6 @@ extract_params <- function(fit, data,
 }
 
 
-# Derive marginal intercepts for new-site initialisation in hybrid scenarios.
-# Recovers the population-average LP at visit_num = 0 by back-computing
-# from plots at their earliest observed visit.  This is more robust than
-# directly reading the "(Intercept)" fixed effect, which may be confounded
-# with other baseline covariates in complex models.
-.extract_marginal_intercepts <- function(plot_state, beta_visit) {
-  ps <- plot_state
-  if (nrow(ps) == 0) return(list(marginal_int_cond = 0, marginal_int_zi = 0))
-
-  min_vis <- min(ps$visit_num, na.rm = TRUE)
-  early   <- ps[ps$visit_num == min_vis, , drop = FALSE]
-
-  list(
-    marginal_int_cond = mean(early$eta_last_cond - beta_visit * (min_vis - 1L),
-                             na.rm = TRUE),
-    marginal_int_zi   = mean(early$eta_last_zi, na.rm = TRUE)
-  )
-}
-
-
 # ------------------------------------------------------------------------------
 # Method: glmmTMB
 # ------------------------------------------------------------------------------
@@ -208,29 +200,30 @@ extract_params <- function(fit, data,
 #' is derived from `family(fit)$family` and the presence of a non-trivial
 #' ZI formula.
 #'
-#' `sigma_cond` and `sigma_zi` are extracted via [lme4::VarCorr()].  The
-#' function stops with an informative error on VarCorr failure — it does
-#' **not** fall back to positional TMB theta parameters, which would be
-#' silently wrong.
+#' `sigma_cond` and `sigma_zi` are extracted via [lme4::VarCorr()].  If
+#' extraction fails (e.g. non-positive-definite Hessian), the function stops
+#' with an error — it does **not** fall back to positional TMB theta
+#' parameters, which would be silently wrong.
 #'
-#' `marginal_int_cond` and `marginal_int_zi` are recovered by back-computing
-#' from the earliest observed visit rather than reading the raw fixed-effect
-#' intercept, which may be confounded with other baseline covariates.
-#'
-#' If `visit_num_var` is involved in an interaction term, `beta_visit` is the
+#' If `visit_num` is involved in an interaction term, `beta_visit` is the
 #' main effect only.  Interaction contributions are absorbed into the per-plot
-#' `eta_last_cond` via `predict(..., re.form = NULL)`.
+#' `eta_last_cond` via `predict(..., re.form = NULL)`, so the starting
+#' linear predictor is correct for each plot's observed covariates.
 extract_params.glmmTMB <- function(fit, data,
-                                   visit_num_var = "visit_num",
-                                   plotid_var    = "plotid_model",
-                                   place_var     = "Place",
-                                   visit_gap_var = "visit_gap",
+                                   visit_num_var     = "visit_num",
+                                   plotid_var        = "plotid_model",
+                                   place_var         = "Place",
+                                   offset_var        = NULL,
+                                   offset_transform  = NULL,
+                                   log_effort_future = NULL,
                                    ...) {
   .validate_extract_inputs(data, visit_num_var, plotid_var, place_var)
+  off <- .resolve_offset(data, offset_var, offset_transform, log_effort_future)
 
   fe_cond <- glmmTMB::fixef(fit)$cond
   fe_zi   <- glmmTMB::fixef(fit)$zi
 
+  # visit_num slope — main effect only
   if (!visit_num_var %in% names(fe_cond)) {
     abort(c(
       paste0("`", visit_num_var, "` not found in conditional fixed effects."),
@@ -239,10 +232,14 @@ extract_params.glmmTMB <- function(fit, data,
   }
   beta_visit <- fe_cond[[visit_num_var]]
 
-  gap <- .extract_gap_params(fe_cond, fe_zi, data, visit_gap_var)
+  # visit_gap slopes
+  beta_gap_cond <- if ("visit_gap" %in% names(fe_cond)) fe_cond[["visit_gap"]] else 0
+  beta_gap_zi   <- if ("visit_gap" %in% names(fe_zi))   fe_zi[["visit_gap"]]   else 0
 
-  disp_par <- sigma(fit)
+  # Dispersion
+  disp_par <- glmmTMB::sigma(fit)
 
+  # RE SDs — hard fail if VarCorr doesn't work
   vc <- tryCatch(
     lme4::VarCorr(fit),
     error = function(e) abort(c(
@@ -263,14 +260,18 @@ extract_params.glmmTMB <- function(fit, data,
 
   sigma_zi <- tryCatch(
     sqrt(as.numeric(vc$zi[[plotid_var]])),
-    error = function(e) 0
+    error = function(e) 0  # no ZI RE is fine
   )
 
+  # BLUPs
   re_cond <- tryCatch(
     glmmTMB::ranef(fit)$cond[[plotid_var]],
     error = function(e) abort("Failed to extract conditional BLUPs via `ranef()`.")
   )
-  re_zi <- tryCatch(glmmTMB::ranef(fit)$zi[[plotid_var]], error = function(e) NULL)
+  re_zi <- tryCatch(
+    glmmTMB::ranef(fit)$zi[[plotid_var]],
+    error = function(e) NULL
+  )
 
   blups_cond <- setNames(re_cond[, "(Intercept)"], rownames(re_cond))
   blups_zi   <- if (!is.null(re_zi)) {
@@ -279,6 +280,12 @@ extract_params.glmmTMB <- function(fit, data,
     setNames(rep(0, length(blups_cond)), names(blups_cond))
   }
 
+  # visit_gap median
+  visit_gap_med <- if ("visit_gap" %in% names(data)) {
+    median(data[["visit_gap"]], na.rm = TRUE)
+  } else 0
+
+  # Family string
   fam_raw <- family(fit)$family
   has_zi  <- !identical(fit$modelInfo$allForm$ziformula, ~0)
   fam_str <- if (grepl("truncated", fam_raw) || (grepl("nbinom2", fam_raw) && has_zi)) {
@@ -290,44 +297,42 @@ extract_params.glmmTMB <- function(fit, data,
   } else if (grepl("binomial", fam_raw, ignore.case = TRUE)) {
     "binomial"
   } else {
-    fam_raw
+    fam_raw  # pass through unknown families
   }
 
+  # Per-plot state
   plot_state <- .extract_plot_state(
-    fit             = fit,
-    data            = data,
-    visit_num_var   = visit_num_var,
-    plotid_var      = plotid_var,
-    place_var       = place_var,
-    blups_cond      = blups_cond,
-    blups_zi        = blups_zi,
-    predict_cond_fn = function(nd) predict(fit, newdata = nd,
-                                                     type = "link", re.form = NULL),
+    fit          = fit,
+    data         = data,
+    visit_num_var = visit_num_var,
+    plotid_var   = plotid_var,
+    place_var    = place_var,
+    blups_cond   = blups_cond,
+    blups_zi     = blups_zi,
+    predict_cond_fn = function(nd) glmmTMB::predict(fit, newdata = nd,
+                                                     type = "link",  re.form = NULL),
     predict_zi_fn   = function(nd) tryCatch(
-      predict(fit, newdata = nd, type = "zlink", re.form = NULL),
+      glmmTMB::predict(fit, newdata = nd, type = "zlink", re.form = NULL),
       error = function(e) rep(0, nrow(nd))
     )
   )
 
-  marg <- .extract_marginal_intercepts(plot_state, beta_visit)
-
   structure(
     list(
-      beta_visit      = beta_visit,
-      beta_gap_cond   = gap$beta_gap_cond,
-      beta_gap_zi     = gap$beta_gap_zi,
-      disp_par        = disp_par,
-      sigma_cond      = sigma_cond,
-      sigma_zi        = sigma_zi,
-      visit_gap_med   = gap$visit_gap_med,
-      marginal_int_cond = marg$marginal_int_cond,
-      marginal_int_zi   = marg$marginal_int_zi,
-      family          = fam_str,
-      visit_num_var   = visit_num_var,
-      plotid_var      = plotid_var,
-      place_var       = place_var,
-      visit_gap_var   = visit_gap_var,
-      plot_state      = plot_state
+      beta_visit        = beta_visit,
+      beta_gap_cond     = beta_gap_cond,
+      beta_gap_zi       = beta_gap_zi,
+      disp_par          = disp_par,
+      sigma_cond        = sigma_cond,
+      sigma_zi          = sigma_zi,
+      visit_gap_med     = visit_gap_med,
+      family            = fam_str,
+      visit_num_var     = visit_num_var,
+      plotid_var        = plotid_var,
+      place_var         = place_var,
+      offset_var        = offset_var,
+      log_effort_future = off$log_effort_future,
+      plot_state        = plot_state
     ),
     class = "monpwr_params"
   )
@@ -349,14 +354,17 @@ extract_params.glmmTMB <- function(fit, data,
 #' and `family` is `"gaussian"`.
 #'
 #' There is no ZI component in `lme4` models; `beta_gap_zi`, `sigma_zi`,
-#' `marginal_int_zi`, and `blup_zi` are all `0`.
+#' and `blup_zi` are all `0`.
 extract_params.glmerMod <- function(fit, data,
-                                    visit_num_var = "visit_num",
-                                    plotid_var    = "plotid_model",
-                                    place_var     = "Place",
-                                    visit_gap_var = "visit_gap",
+                                    visit_num_var     = "visit_num",
+                                    plotid_var        = "plotid_model",
+                                    place_var         = "Place",
+                                    offset_var        = NULL,
+                                    offset_transform  = NULL,
+                                    log_effort_future = NULL,
                                     ...) {
   .validate_extract_inputs(data, visit_num_var, plotid_var, place_var)
+  off <- .resolve_offset(data, offset_var, offset_transform, log_effort_future)
 
   fe <- lme4::fixef(fit)
 
@@ -366,14 +374,17 @@ extract_params.glmerMod <- function(fit, data,
       i = "Check `visit_num_var` argument or model formula."
     ))
   }
-  beta_visit <- fe[[visit_num_var]]
-  gap        <- .extract_gap_params(fe, NULL, data, visit_gap_var)
+  beta_visit    <- fe[[visit_num_var]]
+  beta_gap_cond <- if ("visit_gap" %in% names(fe)) fe[["visit_gap"]] else 0
 
+  # Dispersion / family
   fam_obj  <- family(fit)
   fam_name <- fam_obj$family
   disp_par <- if (grepl("Negative Binomial", fam_name, ignore.case = TRUE)) {
     lme4::getME(fit, "glmer.nb.theta")
-  } else 1
+  } else {
+    1  # Poisson / binomial
+  }
 
   fam_str <- if (grepl("Negative Binomial", fam_name, ignore.case = TRUE)) {
     "nbinom2"
@@ -385,7 +396,8 @@ extract_params.glmerMod <- function(fit, data,
     fam_name
   }
 
-  vc      <- lme4::VarCorr(fit)
+  # RE SD
+  vc <- lme4::VarCorr(fit)
   re_name <- grep(plotid_var, names(vc), value = TRUE)[1]
   if (is.na(re_name)) {
     abort(c(
@@ -395,41 +407,43 @@ extract_params.glmerMod <- function(fit, data,
   }
   sigma_cond <- sqrt(as.numeric(vc[[re_name]]))
 
-  re_df      <- lme4::ranef(fit)[[plotid_var]]
+  # BLUPs
+  re_df <- lme4::ranef(fit)[[plotid_var]]
   blups_cond <- setNames(re_df[, "(Intercept)"], rownames(re_df))
   blups_zi   <- setNames(rep(0, length(blups_cond)), names(blups_cond))
 
+  visit_gap_med <- if ("visit_gap" %in% names(data)) {
+    median(data[["visit_gap"]], na.rm = TRUE)
+  } else 0
+
   plot_state <- .extract_plot_state(
-    fit             = fit,
-    data            = data,
-    visit_num_var   = visit_num_var,
-    plotid_var      = plotid_var,
-    place_var       = place_var,
-    blups_cond      = blups_cond,
-    blups_zi        = blups_zi,
-    predict_cond_fn = function(nd) predict(fit, newdata = nd,
+    fit           = fit,
+    data          = data,
+    visit_num_var = visit_num_var,
+    plotid_var    = plotid_var,
+    place_var     = place_var,
+    blups_cond    = blups_cond,
+    blups_zi      = blups_zi,
+    predict_cond_fn = function(nd) lme4::predict(fit, newdata = nd,
                                                   type = "link", re.form = NULL),
     predict_zi_fn   = function(nd) rep(0, nrow(nd))
   )
 
-  marg <- .extract_marginal_intercepts(plot_state, beta_visit)
-
   structure(
     list(
       beta_visit        = beta_visit,
-      beta_gap_cond     = gap$beta_gap_cond,
+      beta_gap_cond     = beta_gap_cond,
       beta_gap_zi       = 0,
       disp_par          = disp_par,
       sigma_cond        = sigma_cond,
       sigma_zi          = 0,
-      visit_gap_med     = gap$visit_gap_med,
-      marginal_int_cond = marg$marginal_int_cond,
-      marginal_int_zi   = 0,
+      visit_gap_med     = visit_gap_med,
       family            = fam_str,
       visit_num_var     = visit_num_var,
       plotid_var        = plotid_var,
       place_var         = place_var,
-      visit_gap_var     = visit_gap_var,
+      offset_var        = offset_var,
+      log_effort_future = off$log_effort_future,
       plot_state        = plot_state
     ),
     class = "monpwr_params"
@@ -439,21 +453,24 @@ extract_params.glmerMod <- function(fit, data,
 #' @rdname extract_params
 #' @export
 extract_params.lmerMod <- function(fit, data,
-                                   visit_num_var = "visit_num",
-                                   plotid_var    = "plotid_model",
-                                   place_var     = "Place",
-                                   visit_gap_var = "visit_gap",
+                                   visit_num_var     = "visit_num",
+                                   plotid_var        = "plotid_model",
+                                   place_var         = "Place",
+                                   offset_var        = NULL,
+                                   offset_transform  = NULL,
+                                   log_effort_future = NULL,
                                    ...) {
   .validate_extract_inputs(data, visit_num_var, plotid_var, place_var)
+  off <- .resolve_offset(data, offset_var, offset_transform, log_effort_future)
 
   fe <- lme4::fixef(fit)
   if (!visit_num_var %in% names(fe)) {
     abort(c(paste0("`", visit_num_var, "` not found in fixed effects.")))
   }
 
-  beta_visit <- fe[[visit_num_var]]
-  gap        <- .extract_gap_params(fe, NULL, data, visit_gap_var)
-  disp_par   <- sigma(fit)
+  beta_visit    <- fe[[visit_num_var]]
+  beta_gap_cond <- if ("visit_gap" %in% names(fe)) fe[["visit_gap"]] else 0
+  disp_par      <- lme4::sigma(fit)  # residual SD for Gaussian
 
   vc      <- lme4::VarCorr(fit)
   re_name <- grep(plotid_var, names(vc), value = TRUE)[1]
@@ -463,37 +480,38 @@ extract_params.lmerMod <- function(fit, data,
   blups_cond <- setNames(re_df[, "(Intercept)"], rownames(re_df))
   blups_zi   <- setNames(rep(0, length(blups_cond)), names(blups_cond))
 
+  visit_gap_med <- if ("visit_gap" %in% names(data)) {
+    median(data[["visit_gap"]], na.rm = TRUE)
+  } else 0
+
   plot_state <- .extract_plot_state(
-    fit             = fit,
-    data            = data,
-    visit_num_var   = visit_num_var,
-    plotid_var      = plotid_var,
-    place_var       = place_var,
-    blups_cond      = blups_cond,
-    blups_zi        = blups_zi,
-    predict_cond_fn = function(nd) predict(fit, newdata = nd,
+    fit           = fit,
+    data          = data,
+    visit_num_var = visit_num_var,
+    plotid_var    = plotid_var,
+    place_var     = place_var,
+    blups_cond    = blups_cond,
+    blups_zi      = blups_zi,
+    predict_cond_fn = function(nd) lme4::predict(fit, newdata = nd,
                                                   type = "link", re.form = NULL),
     predict_zi_fn   = function(nd) rep(0, nrow(nd))
   )
 
-  marg <- .extract_marginal_intercepts(plot_state, beta_visit)
-
   structure(
     list(
       beta_visit        = beta_visit,
-      beta_gap_cond     = gap$beta_gap_cond,
+      beta_gap_cond     = beta_gap_cond,
       beta_gap_zi       = 0,
       disp_par          = disp_par,
       sigma_cond        = sigma_cond,
       sigma_zi          = 0,
-      visit_gap_med     = gap$visit_gap_med,
-      marginal_int_cond = marg$marginal_int_cond,
-      marginal_int_zi   = 0,
+      visit_gap_med     = visit_gap_med,
       family            = "gaussian",
       visit_num_var     = visit_num_var,
       plotid_var        = plotid_var,
       place_var         = place_var,
-      visit_gap_var     = visit_gap_var,
+      offset_var        = offset_var,
+      log_effort_future = off$log_effort_future,
       plot_state        = plot_state
     ),
     class = "monpwr_params"
@@ -511,16 +529,15 @@ extract_params.default <- function(fit, data,
                                    visit_num_var = "visit_num",
                                    plotid_var    = "plotid_model",
                                    place_var     = "Place",
-                                   visit_gap_var = "visit_gap",
                                    ...) {
   abort(c(
     paste0("No `extract_params` method for class: `",
            paste(class(fit), collapse = "`, `"), "`."),
     i = "Supported classes: `glmmTMB`, `glmerMod`, `lmerMod`.",
     i = paste0(
-      "To use a custom model, implement `extract_params.myclass()` returning ",
-      "a list with the `monpwr_params` structure (including `marginal_int_cond` ",
-      "and `marginal_int_zi`). See `vignette('custom-extractor')`."
+      "To use a custom model, implement `extract_params.myclass()` that ",
+      "returns a list with the `monpwr_params` structure. ",
+      "See `vignette('custom-extractor')` for the required fields and a worked example."
     )
   ))
 }
@@ -534,15 +551,15 @@ extract_params.default <- function(fit, data,
 print.monpwr_params <- function(x, ...) {
   cli::cli_h2("monpwr_params")
   cli::cli_bullets(c(
-    "*" = paste0("Family:                ", x$family),
-    "*" = paste0("visit_num slope:       ", round(x$beta_visit,        4)),
-    "*" = paste0("RE SD (cond):          ", round(x$sigma_cond,        4)),
-    "*" = paste0("RE SD (zi):            ", round(x$sigma_zi,          4)),
-    "*" = paste0("Dispersion:            ", round(x$disp_par,          4)),
-    "*" = paste0("Median visit gap:      ", round(x$visit_gap_med,     1)),
-    "*" = paste0("Marginal int (cond):   ", round(x$marginal_int_cond, 4)),
-    "*" = paste0("Marginal int (zi):     ", round(x$marginal_int_zi,   4)),
-    "*" = paste0("Plots in state:        ", nrow(x$plot_state))
+    "*" = paste0("Family:            ", x$family),
+    "*" = paste0("visit_num slope:   ", round(x$beta_visit, 4)),
+    "*" = paste0("RE SD (cond):      ", round(x$sigma_cond, 4)),
+    "*" = paste0("RE SD (zi):        ", round(x$sigma_zi,   4)),
+    "*" = paste0("Dispersion:        ", round(x$disp_par,   4)),
+    "*" = paste0("Median visit gap:  ", round(x$visit_gap_med, 1)),
+    "*" = paste0("Offset var:        ", x$offset_var %||% "(none)"),
+    "*" = paste0("log_effort_future: ", round(x$log_effort_future, 4)),
+    "*" = paste0("Plots in state:    ", nrow(x$plot_state))
   ))
   invisible(x)
 }

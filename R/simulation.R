@@ -2,37 +2,36 @@
 #'
 #' @description
 #' The core simulation engine.  Given a plot-state data frame (from either
-#' [init_conditional()], [init_new_sites()], [init_prospective_marginal()],
-#' or a custom initialiser), simulates `n_future` additional visits per plot
-#' under a specified effect size, using the parameters in `ref_params`.
+#' [init_conditional()] or [init_prospective_marginal()] / a custom `init_fn`),
+#' simulates `n_future` additional visits per plot under a specified effect size,
+#' using the parameters in `ref_params`.
 #'
 #' Counts are drawn from the appropriate distribution for the model family
 #' (`ref_params$family`):
-#' * `"hurdle_nbinom2"` — truncated NB2 for occupied plots, Bernoulli for
-#'   occupancy
+#' * `"hurdle_nbinom2"` — truncated NB2 for occupied plots, Bernoulli for occupancy
 #' * `"nbinom2"` — NB2 (including zeros)
 #' * `"poisson"` — Poisson
-#' * `"binomial"` — Bernoulli (0 or 1)
+#' * `"binomial"` — Bernoulli (occupancy only; count = 0 or 1)
 #' * `"gaussian"` — Normal with SD = `ref_params$disp_par`
 #'
 #' @param plot_state Data frame, one row per plot.  Must contain:
-#'   `Place` or `plotid` (character, used as the output `plotid`),
-#'   `visit_num` (integer), `eta_last_cond` (numeric),
-#'   `eta_last_zi` (numeric).  Compatible with output from
-#'   [init_conditional()], [init_new_sites()],
-#'   [init_prospective_marginal()], or a custom initialiser.
-#' @param n_future Integer scalar.  Additional visits to simulate per plot
-#'   beyond its current `visit_num`.
-#' @param eff_log Numeric scalar.  Hypothetical trend on the log scale:
-#'   `log(1 + effect_pct / 100)`.
+#'   `plotid` (character), `visit_num` (integer), `eta_last_cond` (numeric),
+#'   `eta_last_zi` (numeric).  Produced by [init_conditional()],
+#'   [init_prospective_marginal()], or a custom `init_fn`.
+#' @param n_future Integer scalar.  Number of additional visits to simulate
+#'   beyond each plot's current `visit_num`.
+#' @param eff_log Numeric scalar.  The hypothetical effect size on the
+#'   log scale: `log(1 + effect_pct / 100)`.  This is the trend coefficient
+#'   applied to future visits.
 #' @param ref_params A `monpwr_params` object from [extract_params()].
-#' @param draw_re Logical.  If `TRUE` (prospective mode), fresh random effects
-#'   are drawn from `N(0, sigma_cond)` and `N(0, sigma_zi)` for each plot.
-#'   If `FALSE` (conditional/hybrid mode), random effects are already absorbed
-#'   into `eta_last_cond` / `eta_last_zi` and are not re-drawn.
+#' @param draw_re Logical.  If `TRUE` (default for prospective mode), fresh
+#'   random effects are drawn from `N(0, sigma_cond)` and `N(0, sigma_zi)`
+#'   for each plot.  If `FALSE` (conditional mode), random effects are already
+#'   absorbed into `eta_last_cond` / `eta_last_zi` and are not re-drawn.
 #'
 #' @return A data frame with one row per plot × future visit, containing:
-#'   `plotid`, `visit_num`, `log_effort` (0), `count`, `source` (`"future"`).
+#'   `plotid`, `visit_num`, `log_effort` (`ref_params$log_effort_future` —
+#'   median observed effort, or `0` if no offset), `count`, `source` (`"future"`).
 #'
 #' @seealso [build_historical()], [fit_and_test()], [run_power_sim()]
 #' @export
@@ -44,13 +43,11 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
     inherits(ref_params, "monpwr_params")
   )
 
-  n_plots <- nrow(plot_state)
-  fam     <- ref_params$family
-  draw_re <- isTRUE(draw_re)
+  n_plots  <- nrow(plot_state)
+  fam      <- ref_params$family
+  draw_re  <- isTRUE(draw_re)
 
-  # Determine the plotid column — prefer "plotid", fall back to "Place"
-  id_col <- if ("plotid" %in% names(plot_state)) "plotid" else "Place"
-
+  # Draw plot-level random effects if prospective mode
   re_cond <- if (draw_re) rnorm(n_plots, 0, ref_params$sigma_cond) else rep(0, n_plots)
   re_zi   <- if (draw_re && ref_params$sigma_zi > 0) {
     rnorm(n_plots, 0, ref_params$sigma_zi)
@@ -61,9 +58,14 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
   rows <- vector("list", n_plots)
 
   for (i in seq_len(n_plots)) {
-    ps         <- plot_state[i, ]
-    future_vis <- seq(ps$visit_num + 1L, ps$visit_num + n_future)
+    ps           <- plot_state[i, ]
+    future_vis   <- seq(ps$visit_num + 1L, ps$visit_num + n_future)
 
+    # Linear predictor for future visits:
+    # eta_last is the starting point (observed, or marginal for prospective).
+    # We add the increment from the hypothetical slope (eff_log) relative to
+    # the fitted slope (beta_visit) so that the data-generating process uses
+    # eff_log as the true trend, starting from the observed/marginal state.
     eta_c <- ps$eta_last_cond +
       (eff_log - ref_params$beta_visit) * (future_vis - ps$visit_num) +
       ref_params$beta_gap_cond * ref_params$visit_gap_med +
@@ -74,14 +76,14 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
       re_zi[i]
 
     mu  <- exp(eta_c)
-    pzi <- plogis(eta_z)
+    pzi <- plogis(eta_z)   # P(structural zero)
 
     counts <- .draw_counts(fam, mu, pzi, n_future, ref_params$disp_par)
 
     rows[[i]] <- data.frame(
-      plotid     = as.character(ps[[id_col]]),
+      plotid     = as.character(ps$plotid %||% ps$Place),
       visit_num  = future_vis,
-      log_effort = 0,
+      log_effort = ref_params$log_effort_future,
       count      = counts,
       source     = "future",
       stringsAsFactors = FALSE
@@ -112,11 +114,15 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
       counts
     },
 
-    nbinom2  = rnbinom(n, size = disp, mu = mu),
-    poisson  = rpois(n, lambda = mu),
-    binomial = rbinom(n, 1, plogis(log(mu))),
+    nbinom2 = rnbinom(n, size = disp, mu = mu),
+
+    poisson = rpois(n, lambda = mu),
+
+    binomial = rbinom(n, 1, plogis(log(mu))),  # mu on link scale already
+
     gaussian = rnorm(n, mean = mu, sd = disp),
 
+    # Unknown family — warn once and treat as Poisson
     {
       warn(paste0("Unknown family '", family, "'; simulating as Poisson."))
       rpois(n, lambda = mu)
@@ -124,35 +130,31 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
   )
 }
 
+# NULL-coalescing operator (avoid dependency on rlang::`%||%` at call sites)
+`%||%` <- function(a, b) if (!is.null(a)) a else b
 
-#' Build the historical data stub for legacy plots
+
+#' Build the historical data stub for retained plots
 #'
 #' @description
-#' Extracts the observed monitoring record for a set of retained legacy plots
-#' from the full modelling dataset.  The historical stub is stacked with
-#' simulated future data in [run_power_sim()] (conditional and hybrid modes)
-#' so that the trend model sees the full temporal record.
-#'
-#' New plots (in hybrid scenarios) have no historical record and must not be
-#' included in `site_ids` here.  Pass only legacy site IDs.
+#' Extracts the observed monitoring record for a set of retained plots from
+#' the full modelling dataset.  The historical stub is stacked with simulated
+#' future data in [run_power_sim()] (conditional mode) so that the trend model
+#' sees the full temporal record — existing visits + future visits.
 #'
 #' In prospective mode this function is not called; the trend model sees only
 #' simulated future data.
 #'
 #' @param data A data frame — the full modelling dataset, one row per plot ×
-#'   visit.
-#' @param site_ids Character vector.  Legacy site IDs to retain.
-#' @param place_var Character scalar.  Name of the site ID column in `data`.
+#'   visit.  Must contain `Place`, `visit_num`, `log_effort`, and `count`
+#'   columns (or the equivalents specified via `place_var` etc. in
+#'   [extract_params()]; the defaults are used here).
+#' @param site_ids Character vector.  Plot `Place` IDs to retain.
+#' @param place_var Character scalar.  Name of the plot ID column in `data`.
 #'   Default `"Place"`.
-#' @param plotid_var Character scalar.  Name of the model grouping column in
-#'   `data`.  Default `"plotid_model"`.  This becomes the `plotid` column in
-#'   the returned stub (matched by [fit_and_test()]).
-#' @param visit_num_var Character scalar.  Name of the visit sequence column.
-#'   Default `"visit_num"`.
-#' @param log_effort_var Character scalar.  Name of the log-effort offset
-#'   column.  Default `"log_effort"`.
-#' @param count_var Character scalar.  Name of the response count column.
-#'   Default `"count"`.
+#' @param plotid_var Character scalar.  Name of the model grouping column.
+#'   Default `"plotid_model"`.  This becomes the `plotid` column in the
+#'   output (used by [fit_and_test()]).
 #'
 #' @return A data frame with columns `plotid`, `visit_num`, `log_effort`,
 #'   `count`, `source` (`"observed"`).
@@ -160,18 +162,23 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
 #' @seealso [simulate_visits()], [run_power_sim()]
 #' @export
 build_historical <- function(data, site_ids,
-                             place_var      = "Place",
-                             plotid_var     = "plotid_model",
-                             visit_num_var  = "visit_num",
-                             log_effort_var = "log_effort",
-                             count_var      = "count") {
+                             place_var  = "Place",
+                             plotid_var = "plotid_model",
+                             offset_var = NULL) {
+  log_eff_vals <- if (!is.null(offset_var) && offset_var %in% names(data)) {
+    data[[offset_var]]
+  } else {
+    rep(0, nrow(data))
+  }
+
   data |>
+    mutate(.log_effort = log_eff_vals) |>
     filter(.data[[place_var]] %in% site_ids) |>
     transmute(
       plotid     = as.character(.data[[plotid_var]]),
-      visit_num  = .data[[visit_num_var]],
-      log_effort = .data[[log_effort_var]],
-      count      = .data[[count_var]],
+      visit_num  = .data$visit_num,
+      log_effort = .data$.log_effort,
+      count      = .data$count,
       source     = "observed"
     )
 }
@@ -180,35 +187,34 @@ build_historical <- function(data, site_ids,
 #' Fit a trend model and return the p-value for the visit coefficient
 #'
 #' @description
-#' Fits a simplified mixed model to the combined observed + simulated data and
-#' returns the Wald p-value for the visit-sequence coefficient.  This is the
-#' test statistic used in power estimation.
+#' Fits a mixed model to the combined observed + simulated data and returns
+#' the Wald p-value for the visit-sequence coefficient (`visit_num`).
+#' This is the test statistic used in power estimation.
 #'
-#' The test model family is chosen automatically based on `ref_params$family`:
-#' * `"hurdle_nbinom2"` — `glmmTMB` hurdle (truncated NB2 + ZI random
-#'   intercept)
+#' The model family used for testing is chosen based on `ref_params$family`:
+#' * `"hurdle_nbinom2"` — `glmmTMB` hurdle (truncated NB2 + ZI random intercept)
 #' * `"nbinom2"` — `glmmTMB` NB2
 #' * `"poisson"` — `glmer` Poisson
 #' * `"binomial"` — `glmer` binomial
 #' * `"gaussian"` — `lmer` Gaussian
 #'
-#' Convergence failures return `NA_real_` silently.  The proportion of
-#' `NA` values is reported as `conv_rate` in [run_power_sim()] output.
+#' Convergence failures return `NA_real_` silently; the proportion of
+#' `NA` values is tracked as `conv_rate` in [run_power_sim()] output.
 #'
 #' @param data A data frame — the combined observed + simulated dataset for
 #'   one simulation replicate.  Must contain `plotid`, `visit_num`,
 #'   `log_effort`, `count`.
-#' @param ref_params A `monpwr_params` object.  Used to select the test model
-#'   family and retrieve `visit_num_var`.
+#' @param ref_params A `monpwr_params` object.  Used to select the
+#'   appropriate model family for the test.
 #'
 #' @return Numeric scalar — the Wald p-value for `visit_num`, or `NA_real_`
 #'   on convergence failure.
 #'
 #' @details
-#' The test model omits all fixed covariates beyond `visit_num` (no group,
-#' spatial, or habitat terms).  These are absorbed into the plot-level random
-#' intercept, giving conservative power estimates that are consistent with
-#' typical monitoring programme reporting practice.
+#' The test model is intentionally simpler than the data-generating model
+#' (no fixed effects for park, forest, spatial terms) — these are absorbed
+#' into the plot-level random intercept.  This gives conservative power
+#' estimates and is consistent with typical FPI reporting practice.
 #'
 #' @seealso [simulate_visits()], [run_power_sim()]
 #' @export
@@ -295,7 +301,7 @@ fit_and_test <- function(data, ref_params) {
   }
 
   if (inherits(fit, c("glmerMod", "lmerMod"))) {
-    ct  <- summary(fit)$coefficients
+    ct <- summary(fit)$coefficients
     if (!"visit_num" %in% rownames(ct)) return(NA_real_)
     col <- if ("Pr(>|z|)" %in% colnames(ct)) "Pr(>|z|)" else "Pr(>|t|)"
     return(ct["visit_num", col])

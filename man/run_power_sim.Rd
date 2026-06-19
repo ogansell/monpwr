@@ -14,8 +14,10 @@ run_power_sim(
   horizons = c(10, 20),
   n_iter = 200L,
   alpha = 0.1,
-  reporting_groups = list(),
-  n_min_group = 5L,
+  scales = c("National", "Park type"),
+  park_type_var = "Park_type",
+  park_name_var = "PCL_Name",
+  n_min_park = 5L,
   place_var = "Place",
   init_fn = NULL,
   workers = NULL,
@@ -28,89 +30,113 @@ run_power_sim(
 \item{scenarios}{A named list of \code{monpwr_scenario} objects from
 \code{\link[=scenario]{scenario()}}.}
 
-\item{plot_metadata}{A data frame with one row per unique \strong{legacy} site.
-Must contain a column named \code{place_var} and any columns used by
-\code{site_selector} functions or listed in \code{reporting_groups}.}
+\item{plot_metadata}{A data frame with one row per unique plot, containing
+at minimum a \code{Place} column (or the value of \code{place_var}) and any
+columns used by \code{site_selector} functions (e.g. park type, spatial flags).}
 
 \item{mode}{Character scalar.  \code{"conditional"} (default) or
-\code{"prospective"}.}
+\code{"prospective"}.  See Details.}
 
 \item{data}{A data frame — the full modelling dataset (required for
-conditional/hybrid mode to build the historical stub).  Pass \code{NULL} for
-prospective mode.}
+conditional mode; used to build the historical stub).  Not needed for
+prospective mode; pass \code{NULL}.}
 
-\item{effect_sizes_pct}{Numeric vector.  Effect sizes as \% change in counts
-per visit period.  Converted internally to log-scale via
-\code{log(1 + pct / 100)}.}
+\item{effect_sizes_pct}{Numeric vector.  Effect sizes as percentage change
+in counts per visit period (e.g. \code{c(10, 20, 30)}).  Converted
+internally to log-scale coefficients via \code{log(1 + pct / 100)}.}
 
-\item{horizons}{Numeric vector.  Monitoring horizons in years.  Future
-visits per horizon: \code{max(1L, floor(horizon / remeasure_yrs))}.}
+\item{horizons}{Numeric vector.  Monitoring horizons in years
+(e.g. \code{c(10, 20)}).  The number of future visits per horizon is
+\code{max(1L, floor(horizon / remeasure_yrs))}.}
 
-\item{n_iter}{Integer scalar.  Simulation replicates per cell.  Default
-200.}
+\item{n_iter}{Integer scalar.  Number of simulation replicates per cell.
+Default 200.  Use a smaller value (e.g. 30) for quick smoke-tests.}
 
-\item{alpha}{Numeric scalar.  Significance threshold.  Default 0.10.}
+\item{alpha}{Numeric scalar.  Significance threshold.  Default 0.10
+(consistent with standard Tier 1 practice).}
 
-\item{reporting_groups}{Named list mapping display labels to column names
-in \code{plot_metadata}.  Each unique level of each listed column becomes a
-separate reporting group.  Groups with fewer than \code{n_min_group} retained
-sites are skipped.  Default \code{list()} (overall scale only).}
+\item{scales}{Character vector.  Reporting scales to include.  Any
+combination of \code{"National"}, \code{"Park type"}, \code{"Park"}.
+Default \code{c("National", "Park type")}.}
 
-\item{n_min_group}{Integer scalar.  Minimum retained sites for a
-group-level analysis.  Default 5.}
+\item{park_type_var}{Character scalar.  Column in \code{plot_metadata}
+distinguishing park types (e.g. \code{"Park_type"}).  Required if
+\code{"Park type"} or \code{"Park"} is in \code{scales}.}
 
-\item{place_var}{Character scalar.  Name of the site ID column in
-\code{plot_metadata} and \code{data}.  Must match \code{ref_params$place_var}.
-Default \code{"Place"}.}
+\item{park_name_var}{Character scalar.  Column in \code{plot_metadata} for
+individual park names (e.g. \code{"PCL_Name"}).  Required if \code{"Park"} is
+in \code{scales}.}
 
-\item{init_fn}{Function or \code{NULL}.  Custom initialiser for prospective
-mode, with signature \verb{function(ref_params, n_plots, ...)}.  Ignored in
-conditional/hybrid mode.}
+\item{n_min_park}{Integer scalar.  Minimum number of retained plots for
+a park-level analysis to be run.  Default 5.}
 
-\item{workers}{Integer scalar.  Parallel workers for \code{furrr}.  Default
-\code{max(1, parallelly::availableCores() - 1)}.  Set to 1 to disable
-parallelism.}
+\item{place_var}{Character scalar.  Name of the plot ID column in
+\code{plot_metadata}.  Default \code{"Place"}.}
 
-\item{...}{Additional arguments forwarded to \code{init_fn} (prospective) or
-\code{new_site_init_fn} (hybrid).}
+\item{init_fn}{Function or \code{NULL}.  Custom initialiser with signature
+\verb{function(ref_params, n_plots, ...)}.  If \code{NULL} (default), uses
+\code{\link[=init_conditional]{init_conditional()}} for \code{mode = "conditional"} and
+\code{\link[=init_prospective_marginal]{init_prospective_marginal()}} for \code{mode = "prospective"}.}
+
+\item{workers}{Integer scalar.  Number of parallel workers for \code{furrr}.
+Default \code{max(1, parallelly::availableCores() - 1)}.  Set to 1 to
+disable parallelism.}
+
+\item{...}{Additional arguments passed to \code{init_fn}.}
 }
 \value{
-A data frame of class \code{"monpwr_results"} with one row per
-scenario × sim_type × scale × group × effect size × horizon, and columns:
-\code{scenario}, \code{label}, \code{sim_type} (\code{"combined"} or \code{"legacy_only"}),
-\code{scale}, \code{group}, \code{effect_pct}, \code{horizon}, \code{n_legacy}, \code{n_new},
-\code{n_total}, \code{n_future}, \code{power}, \code{n_converged}, \code{conv_rate}.
-\code{sim_type = "legacy_only"} rows only appear for hybrid scenarios.
+A data frame (class \code{"monpwr_results"}) with one row per
+scenario × scale × group × effect size × horizon, and columns:
+\code{scenario}, \code{label}, \code{scale}, \code{group}, \code{effect_pct}, \code{horizon},
+\code{n_plots}, \code{n_future}, \code{power}, \code{n_converged}, \code{conv_rate}.
 }
 \description{
-The main outer loop of \code{monpwr}.  Iterates over scenarios, user-defined
-reporting scales, effect sizes, and monitoring horizons, running \code{n_iter}
-simulation replicates per cell in parallel via \code{furrr}.
+The main outer loop of \code{monpwr}.  Iterates over scenarios, reporting
+scales, effect sizes, and monitoring horizons, running \code{n_iter} simulation
+replicates per cell in parallel via \code{furrr}.
 
-Supports three simulation modes:
+Supports two simulation modes:
 \itemize{
-\item \strong{\code{"conditional"}} — each legacy plot is initialised at its observed
-visit number and BLUP (via \code{\link[=init_conditional]{init_conditional()}}); historical data are
+\item \strong{\code{"conditional"}} — each plot is initialised at its observed visit
+number and BLUP (via \code{\link[=init_conditional]{init_conditional()}}); the historical data stub is
 stacked with simulated future data so the existing record contributes
-to the trend estimate.  New sites (if \code{n_new_sites > 0} in the scenario)
-are initialised via \code{\link[=init_new_sites]{init_new_sites()}} with freshly sampled BLUPs each
-replicate — this is the \strong{hybrid} mode.
-\item \strong{\code{"prospective"}} — all plots initialised from scratch (via
+to the trend estimate.
+\item \strong{\code{"prospective"}} — plots are initialised from scratch (via
 \code{\link[=init_prospective_marginal]{init_prospective_marginal()}} or a custom \code{init_fn}); only simulated
-future data are used.  Equivalent to \code{simr}-style analysis.
+future data are used in the trend test.  Equivalent to \code{simr}-style
+analysis.
+}
+}
+\examples{
+\dontrun{
+ref <- extract_params(fit, data = long_model)
+
+scenarios <- list(
+  baseline = scenario("Full grid, 5-yr", 5, function(sp) sp$Place),
+  coarse   = scenario("Half grid, 5-yr", 5, function(sp) sp$Place[sp$in_coarse])
+)
+
+# Conditional (default)
+results <- run_power_sim(
+  ref, scenarios,
+  plot_metadata    = fpi_spatial,
+  data             = long_model,
+  effect_sizes_pct = c(10, 20, 30),
+  horizons         = c(10, 20)
+)
+
+# Prospective
+results_p <- run_power_sim(
+  ref, scenarios,
+  plot_metadata    = fpi_spatial,
+  mode             = "prospective",
+  effect_sizes_pct = c(10, 20, 30),
+  horizons         = c(10, 20)
+)
 }
 
-Reporting scales are \strong{fully user-defined} via \code{reporting_groups}, a
-named list mapping display labels to column names in \code{plot_metadata}.
-No grouping taxonomy (park type, region, land cover, etc.) is assumed.
-An "Overall" scale covering all retained sites is always included.
-
-For hybrid scenarios (scenarios with \code{n_new_sites > 0}), both a combined
-trace (legacy + new sites) and a legacy-only trace are returned in the
-\code{sim_type} column, allowing the power gain from new sites to be
-quantified explicitly.
 }
 \seealso{
-\code{\link[=scenario]{scenario()}}, \code{\link[=extract_params]{extract_params()}}, \code{\link[=compute_mdc]{compute_mdc()}},
-\code{\link[=run_precision]{run_precision()}}, \code{\link[=plot_power]{plot_power()}}, \code{\link[=plot_mdc]{plot_mdc()}}, \code{\link[=plot_cv]{plot_cv()}}
+\code{\link[=extract_params]{extract_params()}}, \code{\link[=scenario]{scenario()}}, \code{\link[=compute_mdc]{compute_mdc()}},
+\code{\link[=bootstrap_cv]{bootstrap_cv()}}, \code{\link[=plot_power]{plot_power()}}, \code{\link[=plot_mdc]{plot_mdc()}}
 }

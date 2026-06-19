@@ -124,16 +124,23 @@ init_new_sites <- function(ref_params, n_new,
     rep(0, n_new)
   }
 
+  ps <- ref_params$plot_state
+  marginal_int_cond <- mean(ps$eta_last_cond - ps$blup_cond -
+                              ref_params$beta_visit * ps$visit_num)
+  marginal_int_zi   <- if (ref_params$sigma_zi > 0) {
+    mean(ps$eta_last_zi - ps$blup_zi)
+  } else {
+    0
+  }
+
   ids <- paste0(id_prefix, seq_len(n_new))
 
   data.frame(
     Place         = ids,
     plotid_model  = ids,
     visit_num     = 0L,
-    eta_last_cond = as.numeric(ref_params$marginal_int_cond) +
-                    eta_offset_cond + blup_cond,
-    eta_last_zi   = as.numeric(ref_params$marginal_int_zi) +
-                    eta_offset_zi + blup_zi,
+    eta_last_cond = marginal_int_cond + eta_offset_cond + blup_cond,
+    eta_last_zi   = marginal_int_zi + eta_offset_zi + blup_zi,
     blup_cond     = blup_cond,
     blup_zi       = blup_zi,
     stringsAsFactors = FALSE
@@ -191,11 +198,20 @@ init_prospective_marginal <- function(ref_params, n_plots, ...) {
   n_plots <- as.integer(n_plots)
   if (n_plots < 2L) abort("`n_plots` must be >= 2.")
 
+  ps <- ref_params$plot_state
+  marginal_int_cond <- mean(ps$eta_last_cond - ps$blup_cond -
+                              ref_params$beta_visit * ps$visit_num)
+  marginal_int_zi   <- if (ref_params$sigma_zi > 0) {
+    mean(ps$eta_last_zi - ps$blup_zi)
+  } else {
+    0
+  }
+
   data.frame(
     plotid        = paste0("plot_", seq_len(n_plots)),
     visit_num     = 0L,
-    eta_last_cond = as.numeric(ref_params$marginal_int_cond),
-    eta_last_zi   = as.numeric(ref_params$marginal_int_zi),
+    eta_last_cond = marginal_int_cond,
+    eta_last_zi   = marginal_int_zi,
     stringsAsFactors = FALSE
   )
 }
