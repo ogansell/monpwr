@@ -1,0 +1,213 @@
+---
+title: "Conditional vs prospective power analysis"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Conditional vs prospective power analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+```
+
+## The problem
+
+Most ecological monitoring programmes face periodic design reviews: should we
+keep all plots, drop some, change the visit frequency, adjust survey effort?
+These decisions require power analysis — but the standard tool for power
+analysis of mixed models (`simr`) answers the wrong question.
+
+`simr` performs **prospective** power analysis.  It initialises every plot
+from visit zero, simulates a complete monitoring record from scratch, fits
+the model, and checks whether the trend is significant.  This answers:
+
+> "If we were starting a new programme today, how many plots would we need?"
+
+But the actual question is:
+
+> "Given what we've already collected, what happens if we change the design?"
+
+These are different questions with different answers.
+
+---
+
+## Two modes of simulation
+
+`monpwr` supports both modes explicitly.
+
+### Prospective mode
+
+Every plot starts at `visit_num = 0` with a linear predictor set to the
+population marginal intercept.  Fresh random effects are drawn each
+replicate from $N(0, \hat\sigma)$.  No historical data enters the trend
+model — only simulated future visits.
+
+This is methodologically equivalent to `simr`.  It answers the
+"starting from scratch" question.
+
+### Conditional mode
+
+Each plot is initialised at its **last observed visit number** with a
+linear predictor derived from the fitted model — absorbing all fixed
+covariate effects and the empirical BLUP.  Future visits are projected
+forward from this position.  The historical data stub (real observed data)
+is stacked with simulated future data, so the trend model sees the
+full temporal record.
+
+This answers the "given what we have" question.
+
+---
+
+## Why the distinction matters
+
+### Temporal capital
+
+A plot that has been visited 5 times already has accumulated information
+about its trajectory.  When the trend model sees 5 real visits plus 5
+simulated future visits, it has 10 data points per plot.  Prospective
+simulation gives it only 5 (all simulated).  The additional leverage from
+banked visits is "temporal capital" — monitoring investment that
+prospective analysis discards.
+
+The practical consequence: prospective power analysis **systematically
+underestimates** the power of established monitoring programmes.  Design
+reviews that rely on prospective analysis may conclude that a programme
+lacks adequate power when it actually doesn't, leading to unnecessarily
+conservative (and expensive) design recommendations.
+
+### Plot-specific initialisation
+
+Conditional mode initialises each plot individually.  This means:
+
+- Plots with different monitoring histories start at different positions
+- The `site_selector` in each scenario picks **specific real plots**, not
+  a generic sample size
+- Two scenarios with the same *n* can give different power estimates
+  depending on which plots are retained
+
+`simr` cannot represent any of this.  It works with a single data template
+where every plot is interchangeable.
+
+### BLUPs as point estimates
+
+Conditional mode uses the empirical BLUP (best linear unbiased predictor)
+as each plot's starting point.  This is a deliberate choice: sampling from
+the BLUP's posterior variance would introduce additional uncertainty that
+shifts conditional simulation toward prospective, undermining the framing.
+
+Shrinkage of BLUPs toward the population mean is a caveat to acknowledge
+in interpretation, not a problem to correct architecturally.
+
+---
+
+## Running both modes
+
+The core workflow for a design review is to run both modes on the same
+data and compare:
+
+```{r comparison}
+library(monpwr)
+
+# Extract parameters from a fitted model
+ref <- extract_params(fit, data = as.data.frame(survey_data),
+                      visit_num_var = "visit_num",
+                      plotid_var    = "site_id",
+                      place_var     = "site_id")
+
+scenarios <- list(
+  full    = scenario("All sites",  1, function(sp) unique(sp$site_id)),
+  reduced = scenario("Core only",  1, function(sp) sp$site_id[sp$is_core])
+)
+
+# Conditional: what power do we actually have?
+results_cond <- run_power_sim(
+  ref, scenarios,
+  plot_metadata    = site_metadata,
+  mode             = "conditional",
+  data             = as.data.frame(survey_data),
+  effect_sizes_pct = c(10, 20, 30),
+  horizons         = c(10, 20),
+  n_iter           = 500
+)
+
+# Prospective: what would simr tell us?
+results_prosp <- run_power_sim(
+  ref, scenarios,
+  plot_metadata    = site_metadata,
+  mode             = "prospective",
+  effect_sizes_pct = c(10, 20, 30),
+  horizons         = c(10, 20),
+  n_iter           = 500
+)
+```
+
+The gap between `results_cond` and `results_prosp` is the temporal capital
+that prospective analysis ignores.  For programmes with 5+ years of data,
+this gap can be substantial.
+
+---
+
+## When to use each mode
+
+| Question | Mode |
+|----------|------|
+| "How many plots do we need for a new programme?" | Prospective |
+| "Should we keep 100 plots or drop to 60?" | Conditional |
+| "What is our current power to detect a 20% decline?" | Conditional |
+| "Would adding 20 new sites improve power?" | Conditional (with hybrid scenarios) |
+| "How does our design compare to starting from scratch?" | Both — the gap is informative |
+
+---
+
+## The conditional advantage is not just statistical
+
+The gap between conditional and prospective power estimates has direct
+funding implications.  Monitoring programmes compete for limited
+conservation budgets.  If a prospective analysis says 80 plots are needed
+to detect a 20% decline, but conditional analysis shows that 50 of your
+existing plots — with their accumulated histories — already achieve 80%
+power, that's 30 plots' worth of fieldwork budget that can be redirected
+elsewhere.
+
+Conversely, conditional analysis can reveal that specific plots contribute
+disproportionately to power (because they have long histories or are in
+informative parts of the parameter space), guiding decisions about which
+plots to prioritise when budgets contract.
+
+---
+
+## Relationship to simr
+
+`monpwr`'s prospective mode is methodologically equivalent to `simr`.
+Both initialise plots from scratch, draw fresh random effects, and test
+for a trend.  The differences are:
+
+1. **Model support**: `simr` requires `lme4` models; `monpwr` supports
+   `glmmTMB` (hurdle models, zero-inflation, nbinom2) and `lme4`.
+
+2. **Test model**: `simr` re-fits the original model; `monpwr` fits a
+   simplified test model (random intercept only).  This is deliberately
+   conservative.
+
+3. **Design-space exploration**: `monpwr`'s scenario/grid architecture
+   makes it natural to sweep over sample sizes, effort levels, horizons,
+   and effect sizes simultaneously.
+
+4. **Retest and extend**: `monpwr` stores raw p-values, enabling
+   `retest()` at alternative alpha levels and `extend()` to pool
+   additional iterations — both without re-simulating.
+
+5. **Conditional mode**: `simr` cannot do this.  Its architecture assumes
+   a fixed data template; `monpwr`'s conditional mode changes the data
+   frame each replicate based on which plots are retained and their
+   individual histories.
+
+For a validation exercise, running `monpwr` prospective alongside `simr`
+on the same model and parameters should produce statistically
+indistinguishable power estimates.  The conditional mode is then the
+contribution that `simr` cannot replicate.
