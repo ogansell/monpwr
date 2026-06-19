@@ -9,6 +9,8 @@ build_historical(
   site_ids,
   place_var = "Place",
   plotid_var = "plotid_model",
+  visit_num_var = "visit_num",
+  count_var = "count",
   offset_var = NULL
 )
 }
