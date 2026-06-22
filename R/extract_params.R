@@ -443,7 +443,7 @@ extract_params.glmerMod <- function(fit, data,
     place_var     = place_var,
     blups_cond    = blups_cond,
     blups_zi      = blups_zi,
-    predict_cond_fn = function(nd) lme4::predict(fit, newdata = nd,
+    predict_cond_fn = function(nd) predict(fit, newdata = nd,
                                                   type = "link", re.form = NULL),
     predict_zi_fn   = function(nd) rep(0, nrow(nd))
   )
@@ -522,7 +522,7 @@ extract_params.lmerMod <- function(fit, data,
     place_var     = place_var,
     blups_cond    = blups_cond,
     blups_zi      = blups_zi,
-    predict_cond_fn = function(nd) lme4::predict(fit, newdata = nd,
+    predict_cond_fn = function(nd) predict(fit, newdata = nd,
                                                   type = "link", re.form = NULL),
     predict_zi_fn   = function(nd) rep(0, nrow(nd))
   )
