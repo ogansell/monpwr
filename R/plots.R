@@ -330,6 +330,8 @@ plot_cv <- function(precision,
 #'   `NULL` (default) produces a single panel.
 #' @param group_filter Character scalar or `NULL`.  Group to include.
 #'   Default `"All"`.  Pass `NULL` to include all groups.
+#' @param show_ci Logical.  If `TRUE` and `power_lower`/`power_upper` columns
+#'   exist, CIs are shown in brackets below the power value.  Default `FALSE`.
 #' @param y_lab Character scalar.  Y-axis label.  Defaults to `y_var`.
 #' @param x_lab Character scalar.  X-axis label.  Defaults to `x_var`.
 #' @param title Character scalar.  Plot title.
@@ -345,6 +347,7 @@ plot_power_grid <- function(results,
                             x_var        = "effect_pct",
                             facet_var    = NULL,
                             group_filter = "All",
+                            show_ci      = FALSE,
                             y_lab        = NULL,
                             x_lab        = NULL,
                             title        = NULL,
@@ -359,8 +362,9 @@ plot_power_grid <- function(results,
     return(invisible(NULL))
   }
 
+  has_ci <- all(c("power_lower", "power_upper") %in% names(dat))
   dat <- dat |>
-    mutate(power_label = if (all(c("power_lower", "power_upper") %in% names(dat)))
+    mutate(power_label = if (isTRUE(show_ci) && has_ci)
       paste0(formatC(.data$power, digits = 2, format = "f"), "\n[",
              formatC(.data$power_lower, digits = 2, format = "f"), ", ",
              formatC(.data$power_upper, digits = 2, format = "f"), "]")

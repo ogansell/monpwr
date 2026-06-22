@@ -293,9 +293,11 @@ Be sceptical of:
 Planned backlog (in priority order):
 1. Conditional vs prospective comparison write-up on FPI data — **this first**
 2. ~~Binomial CIs on power estimates via `binom.test`~~ — **done**
-3. Hybrid mode — plots absent from `plot_state` initialised from marginal intercept
-4. Stress test on a second dataset (bird counts, different family)
-5. `trend_fn` interface replacing scalar `eff_log` with a function over visit steps
+3. `retest()` and `extend()` should preserve extra columns added by the user
+   (e.g. `n_target`, `effort_hrs` from outer loops) — currently drops them
+4. Hybrid mode — plots absent from `plot_state` initialised from marginal intercept
+5. Stress test on a second dataset (bird counts, different family)
+6. `trend_fn` interface replacing scalar `eff_log` with a function over visit steps
 
 
 ## Infrastructure notes
