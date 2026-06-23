@@ -139,8 +139,11 @@ avoid row-index misalignment.
 
 3. `simulate_visits(plot_state, n_future, eff_log, ref_params, draw_re = FALSE)`
    — increments `visit_num` from each plot's current position. The LP increment
-   is `(eff_log - beta_visit) * steps`, so the data-generating process uses
-   `eff_log` as the true trend starting from the observed state.
+   is `eff_log * steps` — `eff_log` is the full forward slope applied from
+   `eta_last_cond`. For prospective mode the intercept is already de-trended
+   (beta_visit stripped by `init_prospective_marginal`), so `eff_log` is the
+   complete trend. For conditional mode, `eta_last_cond` is the fitted value
+   at the last observed visit; `eff_log` is the hypothetical future slope.
    `draw_re = FALSE` — random effects already absorbed into `eta_last_cond`.
 
 4. `fit_and_test(combined, ref_params, test)` — fits a simplified test model

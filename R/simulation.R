@@ -62,12 +62,8 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
     future_vis   <- seq(ps$visit_num + 1L, ps$visit_num + n_future)
 
     # Linear predictor for future visits:
-    # eta_last is the starting point (observed, or marginal for prospective).
-    # We add the increment from the hypothetical slope (eff_log) relative to
-    # the fitted slope (beta_visit) so that the data-generating process uses
-    # eff_log as the true trend, starting from the observed/marginal state.
     eta_c <- ps$eta_last_cond +
-      (eff_log - ref_params$beta_visit) * (future_vis - ps$visit_num) +
+      eff_log * (future_vis - ps$visit_num) +
       ref_params$beta_gap_cond * ref_params$visit_gap_med +
       re_cond[i]
 
