@@ -10,6 +10,7 @@ plot_power_grid(
   x_var = "effect_pct",
   facet_var = NULL,
   group_filter = "All",
+  show_ci = FALSE,
   y_lab = NULL,
   x_lab = NULL,
   title = NULL,
@@ -32,6 +33,9 @@ Default \code{"effect_pct"}.}
 
 \item{group_filter}{Character scalar or \code{NULL}.  Group to include.
 Default \code{"All"}.  Pass \code{NULL} to include all groups.}
+
+\item{show_ci}{Logical.  If \code{TRUE} and \code{power_lower}/\code{power_upper} columns
+exist, CIs are shown in brackets below the power value.  Default \code{FALSE}.}
 
 \item{y_lab}{Character scalar.  Y-axis label.  Defaults to \code{y_var}.}
 
