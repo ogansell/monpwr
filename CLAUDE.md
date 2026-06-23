@@ -337,6 +337,38 @@ unbalanced. simr produces correct results when given a properly constructed
 balanced design matrix. The issue is usability, not correctness.
 
 
+## Parameter estimation uncertainty
+
+Power analysis — whether via monpwr, simr, or brute-force from estimated
+parameters — is only as reliable as the parameters it's conditioned on.
+Variance components (`sigma_cond`, `sigma_zi`, `disp_par`) estimated from
+small pilot datasets can be substantially biased:
+
+- 15 plots × 5 visits: `sigma_cond` estimated at 0.68 vs true 0.80 (15%
+  underestimate → power overestimate)
+- The bias is stochastic — sometimes over, sometimes under — but with
+  small pilots, the RE variance is consistently underestimated due to
+  shrinkage in mixed models
+
+**Implications**: monpwr extracts parameters once and uses them for all
+replicates. If the extracted `sigma_cond` is too small, every replicate
+simulates less noisy data than reality, inflating power. simr has the
+same underlying issue but it's partially masked because simr re-estimates
+variance during `powerSim()`.
+
+**This is not fixable in code** — it's a fundamental limitation of
+conditioning on estimated parameters from finite data. It belongs in the
+methods discussion of the paper, not as a code change.
+
+**Practical guidance**:
+- Fit the model to as much data as possible before extracting parameters.
+  A model from 144 tiles is far more reliable than one from 15.
+- Consider sensitivity analysis: run power with `sigma_cond * 1.2` and
+  `sigma_cond * 0.8` to bracket the uncertainty.
+- Report that power estimates are conditional on the estimated variance
+  structure and may be optimistic if the pilot is small.
+
+
 ## Infrastructure notes
 
 - **AWS EC2** (ap-southeast-2, Melbourne) for production runs
