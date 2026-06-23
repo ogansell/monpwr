@@ -296,11 +296,45 @@ Be sceptical of:
 Planned backlog (in priority order):
 1. Conditional vs prospective comparison write-up on FPI data — **this first**
 2. ~~Binomial CIs on power estimates via `binom.test`~~ — **done**
-3. `retest()` and `extend()` should preserve extra columns added by the user
+3. ~~`simulate_visits` trend formula bug~~ — **fixed** (was `(eff_log - beta_visit) * steps`,
+   now `eff_log * steps`). Previous analyses underestimated power proportional to
+   `beta_visit`. All kea and FPI results should be re-run.
+4. `retest()` and `extend()` should preserve extra columns added by the user
    (e.g. `n_target`, `effort_hrs` from outer loops) — currently drops them
-4. Hybrid mode — plots absent from `plot_state` initialised from marginal intercept
-5. Stress test on a second dataset (bird counts, different family)
-6. `trend_fn` interface replacing scalar `eff_log` with a function over visit steps
+5. Investigate `simr::extend()` behaviour with unbalanced data — see note below
+6. Hybrid mode — plots absent from `plot_state` initialised from marginal intercept
+7. Stress test on a second dataset (bird counts, different family)
+8. `trend_fn` interface replacing scalar `eff_log` with a function over visit steps
+
+
+## simr::extend() investigation
+
+During validation testing (kea data, synthetic experiments), `simr::extend()`
+was found to construct the extended data by **cyclically recycling rows** from
+the original data. With balanced data (equal n per time point) this produces
+a clean balanced design and power estimates agree with monpwr and brute-force
+ground truth. However, with unbalanced data (varying n per time point — common
+in ecological monitoring), the recycled structure does not match any realistic
+design:
+
+- Kea data: original visits per year = 70, 174, 248, 245, 181. After
+  `extend(along = "year_seq", n = 10)`, the extended data cycles these counts
+  across 10 time points: 174, 248, 181, 70, 245, 174, 248, 181, 70, 245.
+- The resulting design has unequal replication per time point, inherited from
+  the original data's imbalance, which no real monitoring programme would
+  implement.
+
+**Status**: needs systematic investigation across data types:
+1. Balanced (equal n per visit) — validated, simr agrees with ground truth
+2. Missing visits (some plots have gaps) — not yet tested
+3. Unequal plots per time (programme grew over time) — not yet tested
+4. Multiple observations per plot-visit (repeat surveys) — not yet tested
+
+**Framing for the paper**: do not claim simr is wrong. The finding is that
+`extend()` — the standard convenience function — creates a data structure
+that may not match the user's intended design when the original data is
+unbalanced. simr produces correct results when given a properly constructed
+balanced design matrix. The issue is usability, not correctness.
 
 
 ## Infrastructure notes
