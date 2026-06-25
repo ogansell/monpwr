@@ -324,3 +324,130 @@ run_precision <- function(scenarios,
     bind_rows(rows) |> mutate(scenario = sc_name, label = sc$label)
   })
 }
+
+
+#' Estimate parametric bias in power estimates
+#'
+#' @description
+#' Compares monpwr's prospective power estimate against a brute-force
+#' ground truth at a single design point.  The brute-force estimator
+#' generates fresh data from `ref_params` each replicate (re-drawing
+#' random effects and observation noise), fits the test model, and
+#' collects p-values — identical to monpwr's DGP but without conditioning
+#' on a fixed variance estimate.
+#'
+#' The difference between monpwr and brute-force power is the parametric
+#' bias: the optimism introduced by conditioning on estimated variance
+#' components from finite data.  This bias is approximately constant
+#' across the design grid for a given `ref_params`, so calibrating at
+#' one point is sufficient.
+#'
+#' @param ref_params A `monpwr_params` object from [extract_params()].
+#' @param n_plots Integer scalar.  Number of plots in the design.
+#' @param n_visits Integer scalar.  Number of future visits (time points).
+#' @param effect_pct Numeric scalar.  Effect size as percent change per
+#'   visit (e.g. `3` for 3%).
+#' @param n_cal Integer scalar.  Number of calibration replicates.
+#'   Default 200.  Higher values give a tighter bias estimate but take
+#'   longer.
+#' @param alpha Numeric scalar.  Significance threshold.  Default 0.05.
+#' @param test Character scalar.  `"wald"` (default) or `"lrt"`.
+#'
+#' @return A list with:
+#'   \describe{
+#'     \item{`monpwr_power`}{Power estimated by monpwr prospective simulation.}
+#'     \item{`truth_power`}{Brute-force ground-truth power.}
+#'     \item{`bias`}{`monpwr_power - truth_power`.  Positive = optimistic.}
+#'     \item{`truth_ci`}{95% binomial CI on the ground-truth estimate.}
+#'     \item{`n_cal`}{Number of calibration replicates used.}
+#'     \item{`sigma_cond`}{Extracted sigma (for reference).}
+#'   }
+#'
+#' @seealso [run_power_sim()], [extract_params()]
+#' @export
+calibrate_bias <- function(ref_params, n_plots, n_visits, effect_pct,
+                           n_cal = 200L, alpha = 0.05, test = c("wald", "lrt")) {
+  stopifnot(inherits(ref_params, "monpwr_params"))
+  test <- match.arg(test)
+  n_cal <- as.integer(n_cal)
+
+  eff_log <- log(1 + effect_pct / 100)
+
+  # --- monpwr prospective ---
+  plot_state <- init_prospective_marginal(ref_params, n_plots)
+
+  cli::cli_alert_info("Calibration: monpwr ({n_cal} reps)...")
+  monpwr_pvals <- vapply(seq_len(n_cal), function(i) {
+    future_dat <- simulate_visits(plot_state, n_visits, eff_log, ref_params,
+                                  draw_re = TRUE)
+    fit_and_test(future_dat, ref_params, test = test)
+  }, double(1))
+
+  monpwr_conv  <- sum(!is.na(monpwr_pvals))
+  monpwr_power <- if (monpwr_conv > 0) sum(monpwr_pvals < alpha, na.rm = TRUE) / monpwr_conv else NA_real_
+
+  # --- brute-force ground truth ---
+  cli::cli_alert_info("Calibration: brute-force ({n_cal} reps)...")
+
+  ps <- ref_params$plot_state
+  marginal_int <- mean(ps$eta_last_cond - ps$blup_cond -
+                         ref_params$beta_visit * ps$visit_num)
+  marginal_zi  <- if (ref_params$sigma_zi > 0) {
+    mean(ps$eta_last_zi - ps$blup_zi)
+  } else {
+    0
+  }
+
+  bf_pvals <- vapply(seq_len(n_cal), function(i) {
+    re_cond <- rnorm(n_plots, 0, ref_params$sigma_cond)
+    re_zi   <- if (ref_params$sigma_zi > 0) {
+      rnorm(n_plots, 0, ref_params$sigma_zi)
+    } else {
+      rep(0, n_plots)
+    }
+
+    rows <- vector("list", n_plots)
+    for (p in seq_len(n_plots)) {
+      vis <- seq_len(n_visits)
+      eta_c <- marginal_int + eff_log * vis + re_cond[p]
+      eta_z <- marginal_zi + re_zi[p]
+      mu  <- exp(eta_c)
+      pzi <- plogis(eta_z)
+      counts <- .draw_counts(ref_params$family, mu, pzi, n_visits,
+                              ref_params$disp_par)
+      rows[[p]] <- data.frame(
+        plotid     = paste0("plot_", p),
+        visit_num  = vis,
+        log_effort = ref_params$log_effort_future,
+        count      = counts,
+        source     = "future",
+        stringsAsFactors = FALSE
+      )
+    }
+    bf_dat <- do.call(rbind, rows)
+    fit_and_test(bf_dat, ref_params, test = test)
+  }, double(1))
+
+  bf_conv  <- sum(!is.na(bf_pvals))
+  bf_power <- if (bf_conv > 0) sum(bf_pvals < alpha, na.rm = TRUE) / bf_conv else NA_real_
+  bf_ci    <- if (bf_conv > 0) {
+    stats::binom.test(sum(bf_pvals < alpha, na.rm = TRUE), bf_conv)$conf.int
+  } else {
+    c(NA_real_, NA_real_)
+  }
+
+  bias <- monpwr_power - bf_power
+
+  cli::cli_alert_info(
+    "Bias: {round(bias * 100, 1)} percentage points (monpwr {round(monpwr_power * 100, 1)}% vs truth {round(bf_power * 100, 1)}%)"
+  )
+
+  list(
+    monpwr_power = monpwr_power,
+    truth_power  = bf_power,
+    bias         = bias,
+    truth_ci     = as.numeric(bf_ci),
+    n_cal        = n_cal,
+    sigma_cond   = ref_params$sigma_cond
+  )
+}

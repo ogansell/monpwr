@@ -272,7 +272,8 @@ toward prospective, undermining the framing.
 6. **Test model is intentionally simpler than the data-generating model.**
    Fixed covariates (park, forest, spatial) are absorbed into the plot-level
    random intercept in the test model. This is conservative and model-agnostic.
-   It is not a bug.
+   It is not a bug. See "Known caveats" for the asymmetric-variance implication
+   in conditional vs prospective comparisons.
 
 7. **`offset_var = NULL` default.** No offset is assumed unless explicitly
    supplied. This is a breaking change from any code that relied on a
@@ -295,46 +296,76 @@ Be sceptical of:
 
 Planned backlog (in priority order):
 1. Conditional vs prospective comparison write-up on FPI data — **this first**
+   - Include Issue 3 diagnostic (test-model residual variance asymmetry)
+   - Include Issue 6 diagnostic (shrinkage stratification by visit count)
+   - See "Investigation plan: Issues 3 and 6" section for method details
 2. ~~Binomial CIs on power estimates via `binom.test`~~ — **done**
 3. ~~`simulate_visits` trend formula bug~~ — **fixed** (was `(eff_log - beta_visit) * steps`,
    now `eff_log * steps`). Previous analyses underestimated power proportional to
    `beta_visit`. All kea and FPI results should be re-run.
 4. `retest()` and `extend()` should preserve extra columns added by the user
    (e.g. `n_target`, `effort_hrs` from outer loops) — currently drops them
-5. Investigate `simr::extend()` behaviour with unbalanced data — see note below
+5. ~~Investigate `simr::extend()` behaviour with unbalanced data~~ — **done**
+   (7 synthetic experiments in `Kea_survey/simr_extend_experiment.R`; see
+   "simr::extend() investigation" section below)
 6. Hybrid mode — plots absent from `plot_state` initialised from marginal intercept
 7. Stress test on a second dataset (bird counts, different family)
 8. `trend_fn` interface replacing scalar `eff_log` with a function over visit steps
 
 
-## simr::extend() investigation
+## simr::extend() investigation — completed
 
-During validation testing (kea data, synthetic experiments), `simr::extend()`
-was found to construct the extended data by **cyclically recycling rows** from
-the original data. With balanced data (equal n per time point) this produces
-a clean balanced design and power estimates agree with monpwr and brute-force
-ground truth. However, with unbalanced data (varying n per time point — common
-in ecological monitoring), the recycled structure does not match any realistic
-design:
+`simr::extend()` constructs enlarged datasets by **cyclically recycling rows**
+from the original data. With balanced data this produces a clean design. With
+unbalanced data (common in ecological monitoring), the recycled structure does
+not match the intended design.
 
-- Kea data: original visits per year = 70, 174, 248, 245, 181. After
-  `extend(along = "year_seq", n = 10)`, the extended data cycles these counts
-  across 10 time points: 174, 248, 181, 70, 245, 174, 248, 181, 70, 245.
-- The resulting design has unequal replication per time point, inherited from
-  the original data's imbalance, which no real monitoring programme would
-  implement.
+**Diagnostic**: ESS ratio = `nrow(extended_data) / (n_plots × n_target_visits)`.
+Values departing from 1 indicate bias. Above 1 = overestimation (repeat surveys
+inflate rows). Below 1 = underestimation (missing visits or programme growth
+deflate rows). Bias scales linearly with distance from 1.
 
-**Status**: needs systematic investigation across data types:
-1. Balanced (equal n per visit) — validated, simr agrees with ground truth
-2. Missing visits (some plots have gaps) — not yet tested
-3. Unequal plots per time (programme grew over time) — not yet tested
-4. Multiple observations per plot-visit (repeat surveys) — not yet tested
+**Seven synthetic experiments** (`Kea_survey/simr_extend_experiment.R`) with
+known parameters and 500 reps each, comparing 5 methods: ground truth,
+simr thinned, monpwr thinned, monpwr raw, simr extend:
 
-**Framing for the paper**: do not claim simr is wrong. The finding is that
-`extend()` — the standard convenience function — creates a data structure
-that may not match the user's intended design when the original data is
-unbalanced. simr produces correct results when given a properly constructed
-balanced design matrix. The issue is usability, not correctness.
+1. **Four data structures** (balanced, missing visits, programme growth,
+   multiple surveys) — simr extend diverges; monpwr tracks ground truth
+2. **Dose-response** (1–10 repeats) — simr extend bias scales linearly
+   from +5pp to +73pp; thinning fixes simr; monpwr bias constant ~10pp
+3. **extend(along = 'plot')** (15-plot seed, unequal visits) — recycling
+   inherits visit-count imbalance; ESS ratio < 1; thinning doesn't fix this
+4. **Robustness** across 3 parameter sets — bias holds regardless
+5. **NB2** dose-response — same pattern with overdispersion; not family-specific
+6. **Pilot size** (10–100 plots) — monpwr parametric bias shrinks with
+   larger pilots; extracted sigma converges to true value
+7. **powerCurve()** — calls extend() internally, inherits the same bias;
+   thinning before powerCurve() corrects it
+
+**Kea real-data validation** (`Kea_survey/kea_simr_comparison.R`):
+mean bias from brute-force ground truth — simr extend: +0.060,
+simr thinned: -0.383, monpwr: -0.008. monpwr closest to ground truth.
+simr thinned catastrophically underestimates at small n (0% power at
+10 plots where truth is 47–100%) because thinning discards real information.
+
+**Two orthogonal bias sources**:
+- **Structural** (simr extend) — scales with ESS ratio, unbounded in both
+  directions, fixable by thinning to 1 obs/plot/visit before extend()
+- **Parametric** (monpwr) — constant ~7–10pp from conditioning on estimated
+  variance components from small pilots, independent of data structure,
+  shrinks with larger pilots, measurable via `calibrate_bias()`
+
+**monpwr's bias is offset by the conservative test model** — the simple
+test model (`count ~ visit_num + (1|plotid)`) pushes power down while
+parametric conditioning pushes it up. On kea data these nearly cancelled
+(calibrated bias: -5pp). On FPI with richer covariates, the conservative
+model may dominate further.
+
+**Framing for the paper**: do not claim simr is wrong. `extend()` creates
+a data structure that may not match the user's intended design when the
+original data is unbalanced. simr produces correct results when given a
+properly constructed balanced design matrix. The issue is usability, not
+correctness.
 
 
 ## Parameter estimation uncertainty
@@ -365,8 +396,134 @@ methods discussion of the paper, not as a code change.
   A model from 144 tiles is far more reliable than one from 15.
 - Consider sensitivity analysis: run power with `sigma_cond * 1.2` and
   `sigma_cond * 0.8` to bracket the uncertainty.
+- Use `calibrate_bias()` to measure the parametric bias for a given
+  `ref_params` at one design point. The bias is approximately constant
+  across the design grid, so one calibration per parameter set is enough.
 - Report that power estimates are conditional on the estimated variance
   structure and may be optimistic if the pilot is small.
+
+### `calibrate_bias()` usage
+
+```r
+cal <- calibrate_bias(ref_params, n_plots = 30, n_visits = 7,
+                      effect_pct = 5, n_cal = 200)
+# => Bias: X percentage points (monpwr Y% vs truth Z%)
+```
+
+Compares monpwr prospective power against a brute-force estimate at one
+design point. Both use the same extracted parameters and DGP — the only
+difference is that brute-force treats each replicate as independent while
+monpwr conditions on the fixed variance structure. The difference is the
+simulation-engine bias for that parameter set. Choose a design point where
+power is between 20–80% (not ceiling/floor) for a meaningful estimate.
+
+
+## Known caveats for the paper
+
+These are methodological limitations identified during peer review. They do
+not require code changes but must be addressed in the paper's methods/discussion.
+
+### Asymmetric test-model variance across modes (Issue 3)
+
+In conditional mode, `build_historical()` passes observed data generated by the
+full model (with park, forest, spatial covariates). The simplified test model
+(`count ~ visit_num + (1 | plotid)`) cannot account for this covariate-driven
+variation — the random intercept absorbs some but not all of it. In prospective
+mode, no historical stub exists, so this extra variance source is absent.
+
+**Consequence**: the test model's residual variance is expected to be higher in
+conditional replicates than prospective ones, making the conditional-prospective
+comparison non-apples-to-apples. The bias is conservative (inflates residual
+variance → reduces detected power in conditional mode), which means the
+conditional-prospective gap may be slightly understated.
+
+**Status**: unquantified. Needs empirical diagnosis — see investigation plan below.
+
+### BLUP shrinkage magnitude unquantified (Issue 6)
+
+For plots with few visits (1–2), BLUP shrinkage pulls `eta_last_cond` toward
+the population mean, making conditional initialisation resemble prospective.
+The conditional-prospective power gap for these plots is compressed relative
+to plots with longer histories. This is inherent to BLUPs and is not a bug
+(see design decision 3), but the magnitude of the effect is unquantified.
+
+**Consequence**: the reported conditional-prospective gap is a weighted average
+across plots with varying shrinkage. Plots with many visits contribute most
+of the gap; plots with few visits contribute little. This is correct behaviour
+but should be reported transparently.
+
+**Status**: unquantified. Needs a sensitivity diagnostic — see investigation
+plan below.
+
+### Scalar `log_effort_future` (minor)
+
+All future visits use a single scalar offset (median observed log-effort).
+In conditional mode, plot-specific future effort would be more realistic.
+This is a defensible simplification — document as a limitation if effort
+varies substantially across plots.
+
+### Linear trend scope constraint
+
+`init_prospective_marginal()` strips `beta_visit * visit_num` to derive the
+marginal intercept. This is correct when the time variable is a linear
+`visit_num` term. If the original model uses a non-linear time structure
+(e.g. `poly(Season, 2)`), the quadratic component would not be fully stripped.
+In practice this does not arise because `extract_params()` extracts the
+coefficient on the declared `visit_num_var`, not on polynomial terms. Document
+as a scope constraint: monpwr assumes a linear visit-sequence predictor.
+
+
+## Investigation plan: Issues 3 and 6
+
+These diagnostics should be run as part of the conditional vs prospective
+comparison (backlog item 1) on FPI data, not as separate work items.
+
+### Issue 3: test-model residual variance asymmetry
+
+**Goal**: quantify whether residual variance in the test model is systematically
+higher for conditional replicates than prospective ones.
+
+**Method**:
+1. Run a moderate grid (e.g. 50 plots, 5 future visits, 500 reps) in both
+   conditional and prospective mode on FPI data.
+2. For each replicate, extract `sigma(fit)` (residual SD) and the random
+   intercept variance from the fitted test model.
+3. Compare distributions: boxplot of residual SD by mode, Wilcoxon test.
+4. If the difference is significant, estimate its effect on the power gap:
+   re-run conditional mode but fitting the test model with an additional
+   fixed covariate (e.g. the first PC of the design matrix from the full
+   model) and compare power. If power barely changes, the intercept is
+   absorbing the variance adequately and the caveat is minor.
+
+**Expected outcome**: modest difference that the random intercept largely
+absorbs. If the difference is large, consider adding a note that the
+conditional-prospective gap is conservative by X%.
+
+### Issue 6: shrinkage compression of the conditional-prospective gap
+
+**Goal**: show how the conditional-prospective power gap varies with plot
+visit count, and quantify how much shrinkage compresses the gap for
+data-sparse plots.
+
+**Method**:
+1. From the FPI conditional run, stratify plots by visit count (e.g.
+   1–2, 3–5, 6–10, 10+).
+2. For each stratum, compute conditional power and compare to the
+   prospective baseline (which is the same for all strata since
+   prospective mode ignores history).
+3. Plot: conditional-prospective power gap (y) vs median visits per
+   plot (x), with error bars from binomial CIs.
+4. Overlay the theoretical shrinkage factor: `n_visits / (n_visits + lambda)`
+   where `lambda = disp_par / sigma_cond^2` (approximate).
+
+**Expected outcome**: gap increases monotonically with visit count,
+approaching a plateau. Plots with 1–2 visits show near-zero gap.
+This directly visualises the "temporal capital" argument.
+
+**Paper framing**: the stratified plot is a strong figure for the paper.
+It shows that conditional power analysis correctly values accumulated
+monitoring investment, and that the benefit saturates — additional visits
+beyond ~8–10 contribute diminishing marginal power.
 
 
 ## Infrastructure notes
