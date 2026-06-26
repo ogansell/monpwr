@@ -40,6 +40,15 @@ retest <- function(results, alpha) {
         if (nc == 0) return(NA_real_)
         binom.test(sum(pv < alpha, na.rm = TRUE), nc)$conf.int[2]
       }, double(1)),
+      power_all   = vapply(.data$p_values, function(pv) {
+        sum(pv < alpha, na.rm = TRUE) / length(pv)
+      }, double(1)),
+      power_all_lower = vapply(.data$p_values, function(pv) {
+        binom.test(sum(pv < alpha, na.rm = TRUE), length(pv))$conf.int[1]
+      }, double(1)),
+      power_all_upper = vapply(.data$p_values, function(pv) {
+        binom.test(sum(pv < alpha, na.rm = TRUE), length(pv))$conf.int[2]
+      }, double(1)),
       conv_rate   = round(.data$n_converged /
         vapply(.data$p_values, length, integer(1)), 3)
     )
@@ -117,6 +126,15 @@ extend <- function(results, additional, alpha = NULL) {
         nc <- sum(!is.na(pv))
         if (nc == 0) return(NA_real_)
         binom.test(sum(pv < alpha, na.rm = TRUE), nc)$conf.int[2]
+      }, double(1)),
+      power_all   = vapply(.data$p_values, function(pv) {
+        sum(pv < alpha, na.rm = TRUE) / length(pv)
+      }, double(1)),
+      power_all_lower = vapply(.data$p_values, function(pv) {
+        binom.test(sum(pv < alpha, na.rm = TRUE), length(pv))$conf.int[1]
+      }, double(1)),
+      power_all_upper = vapply(.data$p_values, function(pv) {
+        binom.test(sum(pv < alpha, na.rm = TRUE), length(pv))$conf.int[2]
       }, double(1)),
       conv_rate   = round(.data$n_converged /
         vapply(.data$p_values, length, integer(1)), 3)

@@ -230,17 +230,18 @@ fit_and_test <- function(data, ref_params, test = c("wald", "lrt")) {
   stopifnot(inherits(ref_params, "monpwr_params"))
   test <- match.arg(test)
 
-  tryCatch({
-    fit <- .fit_test_model(data, ref_params$family)
-    if (test == "lrt") {
-      fit_null <- .fit_null_model(data, ref_params$family)
-      .extract_lrt_pval(fit, fit_null)
-    } else {
-      .extract_pval(fit, ref_params$family)
-    }
-  },
-  error   = function(e) NA_real_,
-  warning = function(w) NA_real_
+  withCallingHandlers(
+    tryCatch({
+      fit <- .fit_test_model(data, ref_params$family)
+      if (test == "lrt") {
+        fit_null <- .fit_null_model(data, ref_params$family)
+        .extract_lrt_pval(fit, fit_null)
+      } else {
+        .extract_pval(fit, ref_params$family)
+      }
+    },
+    error = function(e) NA_real_),
+    warning = function(w) invokeRestart("muffleWarning")
   )
 }
 

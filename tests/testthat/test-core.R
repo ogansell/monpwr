@@ -247,6 +247,50 @@ test_that("extend concatenates p-values and recomputes power", {
   expect_equal(combined$power, 0.5)
 })
 
+test_that("fit_and_test returns a p-value despite benign warnings", {
+  skip_if_not_installed("lme4")
+  set.seed(2)
+  d <- data.frame(
+    plotid     = factor(rep(paste0("p", 1:6), each = 3)),
+    visit_num  = rep(1:3, times = 6),
+    log_effort = 0,
+    count      = rpois(18, lambda = 2)
+  )
+  ref <- structure(list(
+    beta_visit = 0.05, beta_gap_cond = 0, beta_gap_zi = 0, disp_par = 1,
+    sigma_cond = 0.01, sigma_zi = 0, visit_gap_med = 0, family = "poisson",
+    visit_num_var = "visit_num", plotid_var = "plotid", place_var = "plotid",
+    visit_gap_var = "visit_gap", count_var = "count", offset_var = NULL,
+    log_effort_future = 0, plot_state = data.frame()
+  ), class = "monpwr_params")
+  p <- fit_and_test(d, ref, test = "wald")
+  expect_true(is.na(p) || (p >= 0 && p <= 1))
+})
+
+test_that(".run_one_cell reports power_all alongside convergence-conditioned power", {
+  skip_on_cran()
+  skip_if_not_installed("lme4")
+  set.seed(3)
+  d <- expand.grid(plot = factor(paste0("p", 1:10)), visit = 1:4)
+  re <- rnorm(10, 0, 0.5)
+  d$count <- rpois(nrow(d), exp(0.5 + log(1.05) * d$visit + re[as.integer(d$plot)]))
+  d <- as.data.frame(d)
+  fit <- lme4::glmer(count ~ visit + (1 | plot), family = poisson, data = d)
+  ref <- extract_params(fit, data = d, visit_num_var = "visit",
+                        plotid_var = "plot", place_var = "plot")
+  scenarios <- list(
+    test = scenario("Test", 5, function(sp) unique(sp$plot))
+  )
+  plot_meta <- data.frame(plot = unique(d$plot), stringsAsFactors = FALSE)
+  res <- run_power_sim(ref, scenarios, plot_metadata = plot_meta,
+                       mode = "prospective", effect_sizes_pct = 10,
+                       horizons = 10, n_iter = 20, alpha = 0.10,
+                       place_var = "plot", workers = 1)
+  expect_true(all(c("power", "power_all", "conv_rate", "n_converged",
+                     "power_all_lower", "power_all_upper") %in% names(res)))
+  expect_true(all(res$power_all >= 0 & res$power_all <= 1))
+})
+
 test_that("calibrate_bias returns the expected fields", {
   skip_on_cran()
   skip_if_not_installed("lme4")

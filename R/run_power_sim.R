@@ -359,21 +359,28 @@ run_power_sim <- function(ref_params,
 
   cli::cli_progress_done(.envir = environment())
 
-  n_conv <- sum(!is.na(p_vals))
-  n_sig  <- sum(p_vals < alpha, na.rm = TRUE)
-  power  <- if (n_conv > 0) n_sig / n_conv else NA_real_
-  ci     <- if (n_conv > 0) stats::binom.test(n_sig, n_conv)$conf.int else c(NA_real_, NA_real_)
+  n_total <- length(p_vals)
+  n_conv  <- sum(!is.na(p_vals))
+  n_sig   <- sum(p_vals < alpha, na.rm = TRUE)
+
+  power     <- if (n_conv > 0) n_sig / n_conv else NA_real_
+  ci        <- if (n_conv > 0) stats::binom.test(n_sig, n_conv)$conf.int else c(NA_real_, NA_real_)
+  power_all <- n_sig / n_total
+  ci_all    <- stats::binom.test(n_sig, n_total)$conf.int
 
   tibble(
-    n_plots     = nrow(plot_state),
-    n_future    = n_future,
-    effect_pct  = effect_pct,
-    power       = power,
-    power_lower = ci[1],
-    power_upper = ci[2],
-    n_converged = n_conv,
-    conv_rate   = round(n_conv / n_iter, 3),
-    p_values    = list(p_vals)
+    n_plots         = nrow(plot_state),
+    n_future        = n_future,
+    effect_pct      = effect_pct,
+    power           = power,
+    power_lower     = ci[1],
+    power_upper     = ci[2],
+    power_all       = power_all,
+    power_all_lower = ci_all[1],
+    power_all_upper = ci_all[2],
+    n_converged     = n_conv,
+    conv_rate       = round(n_conv / n_iter, 3),
+    p_values        = list(p_vals)
   )
 }
 
