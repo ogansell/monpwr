@@ -73,5 +73,5 @@ This is the in-package equivalent of Experiment 6 in the
 simr-comparison study (\code{simr_extend_experiment.R}).
 }
 \seealso{
-\code{\link[=run_power_sim]{run_power_sim()}}, \code{\link[=extract_params]{extract_params()}}
+\code{\link[=run_power_sim]{run_power_sim()}}, \code{\link[=extract_params]{extract_params()}}, \code{\link[=with_sigma_scaling]{with_sigma_scaling()}}
 }

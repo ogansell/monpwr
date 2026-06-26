@@ -400,8 +400,10 @@ methods discussion of the paper, not as a code change.
 **Practical guidance**:
 - Fit the model to as much data as possible before extracting parameters.
   A model from 144 tiles is far more reliable than one from 15.
-- Consider sensitivity analysis: run power with `sigma_cond * 1.2` and
-  `sigma_cond * 0.8` to bracket the uncertainty.
+- Consider sensitivity analysis: use `with_sigma_scaling(ref_params)` to
+  run power with `sigma_cond * 0.8` and `sigma_cond * 1.2` to bracket the
+  uncertainty. The helper returns scaled `monpwr_params` objects (or, with
+  `run_fn`, a bound results grid with a `sigma_scale` column).
 - Use `calibrate_bias()` to measure the parametric bias for a given
   `ref_params` at one design point. The bias is approximately constant
   across the design grid, so one calibration per parameter set is enough.

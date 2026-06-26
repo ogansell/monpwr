@@ -309,6 +309,49 @@ test_that("calibrate_bias returns the expected fields", {
   expect_true(is.na(cal$bias) || (cal$bias >= -1 && cal$bias <= 1))
 })
 
+test_that("with_sigma_scaling scales sigma_cond and sigma_zi but not disp_par", {
+  ref <- structure(list(
+    beta_visit = 0.05, beta_gap_cond = 0, beta_gap_zi = 0, disp_par = 2,
+    sigma_cond = 0.5, sigma_zi = 0.3, visit_gap_med = 0, family = "hurdle_nbinom2",
+    visit_num_var = "visit_num", plotid_var = "plotid_model", place_var = "Place",
+    visit_gap_var = "visit_gap", count_var = "count", offset_var = NULL,
+    log_effort_future = 0, plot_state = data.frame()
+  ), class = "monpwr_params")
+
+  out <- with_sigma_scaling(ref, scales = c(0.8, 1, 1.2))
+  expect_named(out, c("0.8", "1", "1.2"))
+  expect_equal(out[["0.8"]]$sigma_cond, 0.4)
+  expect_equal(out[["1.2"]]$sigma_zi,  0.36)
+  expect_equal(out[["0.8"]]$disp_par,  2)
+  expect_s3_class(out[["1"]], "monpwr_params")
+})
+
+test_that("with_sigma_scaling leaves zero sigma_zi at zero", {
+  ref <- structure(list(
+    beta_visit = 0.05, beta_gap_cond = 0, beta_gap_zi = 0, disp_par = 1,
+    sigma_cond = 0.5, sigma_zi = 0, visit_gap_med = 0, family = "poisson",
+    visit_num_var = "visit_num", plotid_var = "plotid_model", place_var = "Place",
+    visit_gap_var = "visit_gap", count_var = "count", offset_var = NULL,
+    log_effort_future = 0, plot_state = data.frame()
+  ), class = "monpwr_params")
+  out <- with_sigma_scaling(ref, scales = 1.5)
+  expect_equal(out[["1.5"]]$sigma_zi, 0)
+})
+
+test_that("with_sigma_scaling rejects non-positive scales", {
+  ref <- structure(list(sigma_cond = 0.5, sigma_zi = 0), class = "monpwr_params")
+  expect_error(with_sigma_scaling(ref, scales = c(0, 1)), "positive")
+})
+
+test_that("with_sigma_scaling Mode B binds a sigma_scale column", {
+  ref <- structure(list(sigma_cond = 0.5, sigma_zi = 0), class = "monpwr_params")
+  fake_run <- function(rp) data.frame(power = 0.5, sigma_cond = rp$sigma_cond)
+  res <- with_sigma_scaling(ref, scales = c(0.8, 1.2), run_fn = fake_run)
+  expect_true("sigma_scale" %in% names(res))
+  expect_equal(sort(unique(res$sigma_scale)), c(0.8, 1.2))
+  expect_equal(res$sigma_cond, c(0.4, 0.6))
+})
+
 test_that("summary.monpwr_results flags low convergence and large gaps", {
   res <- structure(
     data.frame(

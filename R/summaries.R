@@ -344,6 +344,75 @@ run_precision <- function(scenarios,
 }
 
 
+#' Bracket variance-estimate uncertainty by scaling the random-effect SD
+#'
+#' @description
+#' Variance components (`sigma_cond`, `sigma_zi`) estimated from a small pilot
+#' are uncertain, and power is sensitive to them.  This helper rescales the
+#' random-effect SD of a `monpwr_params` object by one or more multipliers so
+#' the user can bracket how much that uncertainty moves the power estimate —
+#' operationalising the sensitivity-analysis guidance in the package
+#' documentation.
+#'
+#' Only the random-effect SD is scaled.  The dispersion parameter `disp_par`
+#' is left unchanged, because it represents a different (observation-level)
+#' source of uncertainty.
+#'
+#' @param ref_params A `monpwr_params` object from [extract_params()].
+#' @param scales Numeric vector of strictly positive multipliers applied to
+#'   `sigma_cond` (and `sigma_zi` when it is `> 0`).  Default `c(0.8, 1, 1.2)`.
+#' @param run_fn Optional function of a single `monpwr_params` argument that
+#'   returns a `monpwr_results` data frame (e.g. a partially-applied
+#'   [run_power_sim()]).  If supplied, the helper runs it for each scale and
+#'   row-binds the results with a numeric `sigma_scale` column.  If `NULL`
+#'   (default), the helper returns a named list of scaled `monpwr_params`
+#'   objects instead.
+#'
+#' @return If `run_fn` is `NULL`: a named list of `monpwr_params` objects, one
+#'   per scale (names are the scale values).  Otherwise: a single data frame —
+#'   the row-bound `run_fn` outputs with an added `sigma_scale` column.
+#'
+#' @seealso [calibrate_bias()], [run_power_sim()], [extract_params()]
+#' @export
+with_sigma_scaling <- function(ref_params,
+                               scales = c(0.8, 1, 1.2),
+                               run_fn = NULL) {
+  stopifnot(inherits(ref_params, "monpwr_params"))
+  if (!is.numeric(scales) || any(scales <= 0)) {
+    abort(c(
+      "`scales` must be a numeric vector of strictly positive multipliers.",
+      i = "A scale of 0 would zero out the random-effect SD and break simulation."
+    ))
+  }
+
+  scale_one <- function(s) {
+    out <- ref_params
+    out$sigma_cond <- ref_params$sigma_cond * s
+    if (ref_params$sigma_zi > 0) {
+      out$sigma_zi <- ref_params$sigma_zi * s
+    }
+    class(out) <- "monpwr_params"
+    out
+  }
+
+  scaled <- lapply(scales, scale_one)
+  names(scaled) <- as.character(scales)
+
+  if (is.null(run_fn)) {
+    return(scaled)
+  }
+
+  if (!is.function(run_fn)) {
+    abort("`run_fn` must be a function of one argument (a monpwr_params object), or NULL.")
+  }
+
+  map_dfr(seq_along(scaled), function(i) {
+    res <- run_fn(scaled[[i]])
+    res |> mutate(sigma_scale = scales[i])
+  })
+}
+
+
 #' Estimate parametric bias in power estimates
 #'
 #' @description
@@ -391,7 +460,7 @@ run_precision <- function(scenarios,
 #' @note This is the in-package equivalent of Experiment 6 in the
 #'   simr-comparison study (`simr_extend_experiment.R`).
 #'
-#' @seealso [run_power_sim()], [extract_params()]
+#' @seealso [run_power_sim()], [extract_params()], [with_sigma_scaling()]
 #' @export
 calibrate_bias <- function(ref_params, n_plots, n_visits, effect_pct,
                            n_cal = 200L, alpha = 0.05,
