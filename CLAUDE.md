@@ -473,16 +473,19 @@ varies substantially across plots.
 
 ### Family-matching assumption in validation
 
-All current validation experiments (Experiments 1–7 in
-`simr_extend_experiment.R`) generate ground-truth data from the **same**
-distributional family the monpwr test model assumes (Poisson-vs-Poisson in
-Experiments 1–4; NB2-vs-NB2 in Experiment 5). The accuracy claim is therefore
-scoped to the well-specified case — where the analyst's chosen family matches
-the true DGP. A family-misspecification cell (e.g. NB2 truth with Poisson
-test model) is outstanding. In that scenario, the misspecified Poisson test
-model is expected to over-reject (anticonservative), inflating power. This
-does not affect package code but should be acknowledged when interpreting
-validation results.
+Experiments 1–7 generate ground-truth data from the **same** distributional
+family the monpwr test model assumes (Poisson-vs-Poisson in Experiments 1–4;
+NB2-vs-NB2 in Experiment 5). Experiment 8
+(`Kea_survey/family_misspecification_experiment.R`) closes this gap by
+generating NB2 (overdispersed) truth and testing with a misspecified Poisson
+model. Results confirm the hypothesis: the Poisson test under-estimates the
+standard error of the visit coefficient, over-rejects, and inflates power
+monotonically with overdispersion — from +8 pp at near-Poisson (phi=20,
+VMR=1.13) to +50 pp at strong overdispersion (phi=0.5, VMR=6.28). Even
+mild overdispersion (phi=5, VMR=1.53) inflates by +13 pp. The accuracy
+claim remains scoped to the well-specified case; users should verify their
+distributional assumption before interpreting monpwr output. Increase
+`n_sim` in the script for publication-quality estimates.
 
 ### Linear trend scope constraint
 
