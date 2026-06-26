@@ -247,6 +247,24 @@ test_that("extend concatenates p-values and recomputes power", {
   expect_equal(combined$power, 0.5)
 })
 
+test_that("calibrate_bias returns the expected fields", {
+  skip_on_cran()
+  skip_if_not_installed("lme4")
+  set.seed(1)
+  d <- expand.grid(plot = factor(paste0("p", 1:12)), visit = 1:5)
+  re <- rnorm(12, 0, 0.6)
+  d$count <- rpois(nrow(d), exp(0.4 + log(1.05) * d$visit + re[as.integer(d$plot)]))
+  d <- as.data.frame(d)
+  fit <- lme4::glmer(count ~ visit + (1 | plot), family = poisson, data = d)
+  ref <- extract_params(fit, data = d, visit_num_var = "visit",
+                        plotid_var = "plot", place_var = "plot")
+  cal <- calibrate_bias(ref, n_plots = 20, n_visits = 6, effect_pct = 5,
+                        n_cal = 20, n_pilot = 12)
+  expect_true(all(c("monpwr_power", "truth_power", "bias",
+                    "truth_ci", "n_cal", "n_pilot", "sigma_cond") %in% names(cal)))
+  expect_true(is.na(cal$bias) || (cal$bias >= -1 && cal$bias <= 1))
+})
+
 test_that("compute_mdc returns correct MDC when power target reached", {
   fake_results <- structure(
     data.frame(

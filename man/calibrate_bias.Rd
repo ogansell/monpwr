@@ -11,7 +11,9 @@ calibrate_bias(
   effect_pct,
   n_cal = 200L,
   alpha = 0.05,
-  test = c("wald", "lrt")
+  test = c("wald", "lrt"),
+  n_pilot = NULL,
+  pilot_visits = NULL
 )
 }
 \arguments{
@@ -19,7 +21,8 @@ calibrate_bias(
 
 \item{n_plots}{Integer scalar.  Number of plots in the design.}
 
-\item{n_visits}{Integer scalar.  Number of future visits (time points).}
+\item{n_visits}{Integer scalar.
+Number of future visits (time points).}
 
 \item{effect_pct}{Numeric scalar.  Effect size as percent change per
 visit (e.g. \code{3} for 3\%).}
@@ -31,31 +34,43 @@ longer.}
 \item{alpha}{Numeric scalar.  Significance threshold.  Default 0.05.}
 
 \item{test}{Character scalar.  \code{"wald"} (default) or \code{"lrt"}.}
+
+\item{n_pilot}{Integer scalar or \code{NULL}.  Number of plots in each refit
+pilot.  Default \code{NULL} uses \code{nrow(ref_params$plot_state)} (the size
+of the pilot the params actually came from).}
+
+\item{pilot_visits}{Integer scalar or \code{NULL}.  Visits per pilot plot.
+Default \code{NULL} uses \code{n_visits}.}
 }
 \value{
 A list with:
 \describe{
-\item{\code{monpwr_power}}{Power estimated by monpwr prospective simulation.}
-\item{\code{truth_power}}{Brute-force ground-truth power.}
+\item{\code{monpwr_power}}{Power estimated by monpwr conditioning on
+re-estimated pilot parameters.}
+\item{\code{truth_power}}{Power using the true (known) variance components.}
 \item{\code{bias}}{\code{monpwr_power - truth_power}.  Positive = optimistic.}
 \item{\code{truth_ci}}{95\% binomial CI on the ground-truth estimate.}
 \item{\code{n_cal}}{Number of calibration replicates used.}
+\item{\code{n_pilot}}{Pilot size used.}
 \item{\code{sigma_cond}}{Extracted sigma (for reference).}
 }
 }
 \description{
-Compares monpwr's prospective power estimate against a brute-force
-ground truth at a single design point.  The brute-force estimator
-generates fresh data from \code{ref_params} each replicate (re-drawing
-random effects and observation noise), fits the test model, and
-collects p-values — identical to monpwr's DGP but without conditioning
-on a fixed variance estimate.
+Measures the optimism introduced by conditioning on variance components
+estimated from a finite pilot.  The truth arm uses the variance components
+in \code{ref_params} as if they were the true population values.  The monpwr arm
+refits a fresh pilot of \code{n_pilot} plots each replicate, re-extracts the
+variance components, and conditions on those noisy estimates.  The
+difference is the optimism from conditioning on variance components
+estimated from a finite pilot, and it shrinks toward zero as \code{n_pilot}
+grows.
 
-The difference between monpwr and brute-force power is the parametric
-bias: the optimism introduced by conditioning on estimated variance
-components from finite data.  This bias is approximately constant
-across the design grid for a given \code{ref_params}, so calibrating at
-one point is sufficient.
+This is the in-package equivalent of Experiment 6 in the simr-comparison
+study.
+}
+\note{
+This is the in-package equivalent of Experiment 6 in the
+simr-comparison study (\code{simr_extend_experiment.R}).
 }
 \seealso{
 \code{\link[=run_power_sim]{run_power_sim()}}, \code{\link[=extract_params]{extract_params()}}

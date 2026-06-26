@@ -329,22 +329,22 @@ run_precision <- function(scenarios,
 #' Estimate parametric bias in power estimates
 #'
 #' @description
-#' Compares monpwr's prospective power estimate against a brute-force
-#' ground truth at a single design point.  The brute-force estimator
-#' generates fresh data from `ref_params` each replicate (re-drawing
-#' random effects and observation noise), fits the test model, and
-#' collects p-values — identical to monpwr's DGP but without conditioning
-#' on a fixed variance estimate.
+#' Measures the optimism introduced by conditioning on variance components
+#' estimated from a finite pilot.  The truth arm uses the variance components
+#' in `ref_params` as if they were the true population values.  The monpwr arm
+#' refits a fresh pilot of `n_pilot` plots each replicate, re-extracts the
+#' variance components, and conditions on those noisy estimates.  The
+#' difference is the optimism from conditioning on variance components
+#' estimated from a finite pilot, and it shrinks toward zero as `n_pilot`
+#' grows.
 #'
-#' The difference between monpwr and brute-force power is the parametric
-#' bias: the optimism introduced by conditioning on estimated variance
-#' components from finite data.  This bias is approximately constant
-#' across the design grid for a given `ref_params`, so calibrating at
-#' one point is sufficient.
+#' This is the in-package equivalent of Experiment 6 in the simr-comparison
+#' study.
 #'
 #' @param ref_params A `monpwr_params` object from [extract_params()].
 #' @param n_plots Integer scalar.  Number of plots in the design.
-#' @param n_visits Integer scalar.  Number of future visits (time points).
+#' @param n_visits Integer scalar.
+#'   Number of future visits (time points).
 #' @param effect_pct Numeric scalar.  Effect size as percent change per
 #'   visit (e.g. `3` for 3%).
 #' @param n_cal Integer scalar.  Number of calibration replicates.
@@ -352,102 +352,192 @@ run_precision <- function(scenarios,
 #'   longer.
 #' @param alpha Numeric scalar.  Significance threshold.  Default 0.05.
 #' @param test Character scalar.  `"wald"` (default) or `"lrt"`.
+#' @param n_pilot Integer scalar or `NULL`.  Number of plots in each refit
+#'   pilot.  Default `NULL` uses `nrow(ref_params$plot_state)` (the size
+#'   of the pilot the params actually came from).
+#' @param pilot_visits Integer scalar or `NULL`.  Visits per pilot plot.
+#'   Default `NULL` uses `n_visits`.
 #'
 #' @return A list with:
 #'   \describe{
-#'     \item{`monpwr_power`}{Power estimated by monpwr prospective simulation.}
-#'     \item{`truth_power`}{Brute-force ground-truth power.}
+#'     \item{`monpwr_power`}{Power estimated by monpwr conditioning on
+#'       re-estimated pilot parameters.}
+#'     \item{`truth_power`}{Power using the true (known) variance components.}
 #'     \item{`bias`}{`monpwr_power - truth_power`.  Positive = optimistic.}
 #'     \item{`truth_ci`}{95% binomial CI on the ground-truth estimate.}
 #'     \item{`n_cal`}{Number of calibration replicates used.}
+#'     \item{`n_pilot`}{Pilot size used.}
 #'     \item{`sigma_cond`}{Extracted sigma (for reference).}
 #'   }
+#'
+#' @note This is the in-package equivalent of Experiment 6 in the
+#'   simr-comparison study (`simr_extend_experiment.R`).
 #'
 #' @seealso [run_power_sim()], [extract_params()]
 #' @export
 calibrate_bias <- function(ref_params, n_plots, n_visits, effect_pct,
-                           n_cal = 200L, alpha = 0.05, test = c("wald", "lrt")) {
+                           n_cal = 200L, alpha = 0.05,
+                           test = c("wald", "lrt"),
+                           n_pilot = NULL, pilot_visits = NULL) {
   stopifnot(inherits(ref_params, "monpwr_params"))
-  test <- match.arg(test)
+  test  <- match.arg(test)
   n_cal <- as.integer(n_cal)
 
   eff_log <- log(1 + effect_pct / 100)
 
-  # --- monpwr prospective ---
-  plot_state <- init_prospective_marginal(ref_params, n_plots)
-
-  cli::cli_alert_info("Calibration: monpwr ({n_cal} reps)...")
-  monpwr_pvals <- vapply(seq_len(n_cal), function(i) {
-    future_dat <- simulate_visits(plot_state, n_visits, eff_log, ref_params,
-                                  draw_re = TRUE)
-    fit_and_test(future_dat, ref_params, test = test)
-  }, double(1))
-
-  monpwr_conv  <- sum(!is.na(monpwr_pvals))
-  monpwr_power <- if (monpwr_conv > 0) sum(monpwr_pvals < alpha, na.rm = TRUE) / monpwr_conv else NA_real_
-
-  # --- brute-force ground truth ---
-  cli::cli_alert_info("Calibration: brute-force ({n_cal} reps)...")
+  n_pilot      <- if (is.null(n_pilot)) nrow(ref_params$plot_state) else as.integer(n_pilot)
+  pilot_visits <- if (is.null(pilot_visits)) n_visits else as.integer(pilot_visits)
+  if (n_pilot < 2L) abort("`n_pilot` must be >= 2.")
 
   ps <- ref_params$plot_state
   marginal_int <- mean(ps$eta_last_cond - ps$blup_cond -
                          ref_params$beta_visit * ps$visit_num)
-  marginal_zi  <- if (ref_params$sigma_zi > 0) {
-    mean(ps$eta_last_zi - ps$blup_zi)
-  } else {
-    0
-  }
 
-  bf_pvals <- vapply(seq_len(n_cal), function(i) {
-    re_cond <- rnorm(n_plots, 0, ref_params$sigma_cond)
-    re_zi   <- if (ref_params$sigma_zi > 0) {
-      rnorm(n_plots, 0, ref_params$sigma_zi)
-    } else {
-      rep(0, n_plots)
-    }
-
-    rows <- vector("list", n_plots)
-    for (p in seq_len(n_plots)) {
-      vis <- seq_len(n_visits)
-      eta_c <- marginal_int + eff_log * vis + re_cond[p]
-      eta_z <- marginal_zi + re_zi[p]
-      mu  <- exp(eta_c)
-      pzi <- plogis(eta_z)
-      counts <- .draw_counts(ref_params$family, mu, pzi, n_visits,
-                              ref_params$disp_par)
-      rows[[p]] <- data.frame(
-        plotid     = paste0("plot_", p),
-        visit_num  = vis,
-        log_effort = ref_params$log_effort_future,
-        count      = counts,
-        source     = "future",
-        stringsAsFactors = FALSE
-      )
-    }
-    bf_dat <- do.call(rbind, rows)
-    fit_and_test(bf_dat, ref_params, test = test)
+  # ---- TRUTH ARM: power using the TRUE variance components ----
+  cli::cli_alert_info("Calibration: ground truth ({n_cal} reps, known variance)...")
+  truth_state <- data.frame(
+    plotid        = paste0("plot_", seq_len(n_plots)),
+    visit_num     = 0L,
+    eta_last_cond = marginal_int,
+    eta_last_zi   = if (ref_params$sigma_zi > 0) {
+      mean(ps$eta_last_zi - ps$blup_zi)
+    } else 0,
+    stringsAsFactors = FALSE
+  )
+  truth_pvals <- vapply(seq_len(n_cal), function(i) {
+    dat <- simulate_visits(truth_state, n_visits, eff_log, ref_params,
+                           draw_re = TRUE)
+    fit_and_test(dat, ref_params, test = test)
   }, double(1))
+  truth_conv  <- sum(!is.na(truth_pvals))
+  truth_power <- if (truth_conv > 0) {
+    sum(truth_pvals < alpha, na.rm = TRUE) / truth_conv
+  } else NA_real_
+  truth_ci <- if (truth_conv > 0) {
+    stats::binom.test(sum(truth_pvals < alpha, na.rm = TRUE), truth_conv)$conf.int
+  } else c(NA_real_, NA_real_)
 
-  bf_conv  <- sum(!is.na(bf_pvals))
-  bf_power <- if (bf_conv > 0) sum(bf_pvals < alpha, na.rm = TRUE) / bf_conv else NA_real_
-  bf_ci    <- if (bf_conv > 0) {
-    stats::binom.test(sum(bf_pvals < alpha, na.rm = TRUE), bf_conv)$conf.int
-  } else {
-    c(NA_real_, NA_real_)
-  }
+  # ---- monpwr-AS-USED ARM: condition on sigma RE-ESTIMATED from a finite pilot ----
+  cli::cli_alert_info("Calibration: monpwr conditioning on pilot estimates ({n_cal} reps)...")
+  monpwr_pvals <- vapply(seq_len(n_cal), function(i) {
+    pilot <- .simulate_pilot(marginal_int, eff_log, ref_params,
+                             n_pilot, pilot_visits)
+    ref_hat <- tryCatch(
+      .refit_pilot_params(pilot, ref_params),
+      error = function(e) NULL
+    )
+    if (is.null(ref_hat)) return(NA_real_)
+    state_hat <- init_prospective_marginal(ref_hat, n_plots)
+    dat <- simulate_visits(state_hat, n_visits, eff_log, ref_hat, draw_re = TRUE)
+    fit_and_test(dat, ref_hat, test = test)
+  }, double(1))
+  monpwr_conv  <- sum(!is.na(monpwr_pvals))
+  monpwr_power <- if (monpwr_conv > 0) {
+    sum(monpwr_pvals < alpha, na.rm = TRUE) / monpwr_conv
+  } else NA_real_
 
-  bias <- monpwr_power - bf_power
+  bias <- monpwr_power - truth_power
 
   cli::cli_alert_info(
-    "Bias: {round(bias * 100, 1)} percentage points (monpwr {round(monpwr_power * 100, 1)}% vs truth {round(bf_power * 100, 1)}%)"
+    "Bias: {round(bias * 100, 1)} pp (monpwr {round(monpwr_power * 100, 1)}% vs truth {round(truth_power * 100, 1)}%) | pilot n_plots = {n_pilot}"
   )
 
   list(
     monpwr_power = monpwr_power,
-    truth_power  = bf_power,
+    truth_power  = truth_power,
     bias         = bias,
-    truth_ci     = as.numeric(bf_ci),
+    truth_ci     = as.numeric(truth_ci),
     n_cal        = n_cal,
+    n_pilot      = n_pilot,
     sigma_cond   = ref_params$sigma_cond
+  )
+}
+
+
+.simulate_pilot <- function(marginal_int, eff_log, ref_params,
+                            n_pilot, pilot_visits) {
+  vnum  <- ref_params$visit_num_var
+  pid   <- ref_params$plotid_var
+  place <- ref_params$place_var
+  resp  <- ref_params$count_var
+  off   <- ref_params$offset_var
+
+  re_cond <- rnorm(n_pilot, 0, ref_params$sigma_cond)
+  re_zi   <- if (ref_params$sigma_zi > 0) {
+    rnorm(n_pilot, 0, ref_params$sigma_zi)
+  } else rep(0, n_pilot)
+
+  marginal_zi <- if (ref_params$sigma_zi > 0) {
+    ps <- ref_params$plot_state
+    mean(ps$eta_last_zi - ps$blup_zi)
+  } else 0
+
+  rows <- vector("list", n_pilot)
+  for (p in seq_len(n_pilot)) {
+    vis   <- seq_len(pilot_visits)
+    eta_c <- marginal_int + eff_log * vis + re_cond[p]
+    eta_z <- marginal_zi + re_zi[p]
+    counts <- .draw_counts(ref_params$family, exp(eta_c), plogis(eta_z),
+                           pilot_visits, ref_params$disp_par)
+    df <- data.frame(
+      plot_id_tmp = paste0("pilot_", p),
+      vnum_tmp    = vis,
+      resp_tmp    = counts,
+      stringsAsFactors = FALSE
+    )
+    if (!is.null(off)) df$off_tmp <- ref_params$log_effort_future
+    rows[[p]] <- df
+  }
+  out <- do.call(rbind, rows)
+
+  names(out)[names(out) == "plot_id_tmp"] <- pid
+  names(out)[names(out) == "vnum_tmp"]    <- vnum
+  names(out)[names(out) == "resp_tmp"]    <- resp
+  out[[place]] <- out[[pid]]
+  if (!is.null(off)) names(out)[names(out) == "off_tmp"] <- off
+  out
+}
+
+
+.refit_pilot_params <- function(pilot, ref_params) {
+  vnum  <- ref_params$visit_num_var
+  pid   <- ref_params$plotid_var
+  resp  <- ref_params$count_var
+  off   <- ref_params$offset_var
+  fam   <- ref_params$family
+
+  off_term <- if (!is.null(off)) paste0(" + offset(", off, ")") else ""
+  form_txt <- paste0(resp, " ~ ", vnum, off_term, " + (1 | ", pid, ")")
+
+  suppress_w <- function(expr) {
+    withCallingHandlers(expr,
+      warning = function(w) invokeRestart("muffleWarning"))
+  }
+
+  fit <- switch(fam,
+    poisson = suppress_w(lme4::glmer(stats::as.formula(form_txt),
+                                     family = poisson, data = pilot)),
+    binomial = suppress_w(lme4::glmer(
+      stats::as.formula(paste0(resp, " ~ ", vnum, " + (1 | ", pid, ")")),
+      family = binomial, data = pilot)),
+    gaussian = suppress_w(lme4::lmer(
+      stats::as.formula(paste0(resp, " ~ ", vnum, " + (1 | ", pid, ")")),
+      data = pilot)),
+    nbinom2 = suppress_w(glmmTMB::glmmTMB(stats::as.formula(form_txt),
+                                          family = glmmTMB::nbinom2, data = pilot)),
+    hurdle_nbinom2 = suppress_w(glmmTMB::glmmTMB(
+      stats::as.formula(form_txt),
+      ziformula = stats::as.formula(paste0("~ (1 | ", pid, ")")),
+      family    = glmmTMB::truncated_nbinom2, data = pilot)),
+    abort(paste0("calibrate_bias: no pilot refit implemented for family '", fam, "'."))
+  )
+
+  extract_params(
+    fit,
+    data          = pilot,
+    visit_num_var = vnum,
+    plotid_var    = pid,
+    place_var     = ref_params$place_var,
+    offset_var    = off
   )
 }
