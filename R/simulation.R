@@ -114,7 +114,7 @@ simulate_visits <- function(plot_state, n_future, eff_log, ref_params,
 
     poisson = rpois(n, lambda = mu),
 
-    binomial = rbinom(n, 1, plogis(log(mu))),  # mu on link scale already
+    binomial = rbinom(n, 1, plogis(log(mu))),  # mu = exp(eta); log(mu) = eta recovers the logit -> probability
 
     gaussian = rnorm(n, mean = mu, sd = disp),
 
