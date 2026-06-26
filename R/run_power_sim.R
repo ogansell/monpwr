@@ -420,7 +420,7 @@ print.monpwr_results <- function(x, ...) {
 #' @description
 #' Prints a convergence-focused summary of a `monpwr_results` data frame and
 #' returns (invisibly) a per-cell diagnostic table.  Complements
-#' [print.monpwr_results()], which shows the design grid but not convergence.
+#' `print.monpwr_results()`, which shows the design grid but not convergence.
 #'
 #' Two diagnostics are surfaced:
 #' * **Convergence rate** — the fraction of replicates whose test model
@@ -444,7 +444,7 @@ print.monpwr_results <- function(x, ...) {
 #'   `label`, `group`, `effect_pct`, `horizon`, `conv_rate`, `n_converged`,
 #'   `power`, `power_all`, `gap`, `flagged`.
 #'
-#' @seealso [print.monpwr_results()], [run_power_sim()], [calibrate_bias()]
+#' @seealso [run_power_sim()], [calibrate_bias()]
 #' @export
 summary.monpwr_results <- function(object,
                                    conv_threshold = 0.9,

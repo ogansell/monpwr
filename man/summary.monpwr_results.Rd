@@ -25,7 +25,7 @@ Invisibly, a data frame with one row per results cell and columns
 \description{
 Prints a convergence-focused summary of a \code{monpwr_results} data frame and
 returns (invisibly) a per-cell diagnostic table.  Complements
-\code{\link[=print.monpwr_results]{print.monpwr_results()}}, which shows the design grid but not convergence.
+\code{print.monpwr_results()}, which shows the design grid but not convergence.
 
 Two diagnostics are surfaced:
 \itemize{
@@ -41,5 +41,5 @@ Cells are flagged when \code{conv_rate < conv_threshold} or
 \code{abs(power - power_all) > gap_threshold}.
 }
 \seealso{
-\code{\link[=print.monpwr_results]{print.monpwr_results()}}, \code{\link[=run_power_sim]{run_power_sim()}}, \code{\link[=calibrate_bias]{calibrate_bias()}}
+\code{\link[=run_power_sim]{run_power_sim()}}, \code{\link[=calibrate_bias]{calibrate_bias()}}
 }
