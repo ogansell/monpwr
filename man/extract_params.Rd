@@ -110,7 +110,7 @@ the conditional component; \code{0} if not in model.}
 \item{\code{beta_gap_zi}}{Numeric scalar. Coefficient for \code{visit_gap} in
 the ZI component; \code{0} if not in model or model has no ZI.}
 \item{\code{disp_par}}{Numeric scalar. Dispersion parameter. NB2 \code{phi};
-\code{1} for Poisson; \code{Inf} for Gaussian (unused); binomial \code{1}.}
+\code{1} for Poisson; residual SD from \code{sigma(fit)} for Gaussian; binomial \code{1}.}
 \item{\code{sigma_cond}}{Numeric scalar. SD of the plot-level random
 intercept in the conditional/count component.}
 \item{\code{sigma_zi}}{Numeric scalar. SD of the plot-level random intercept

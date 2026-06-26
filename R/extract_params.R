@@ -40,7 +40,7 @@
 #'   \item{`beta_gap_zi`}{Numeric scalar. Coefficient for `visit_gap` in
 #'     the ZI component; `0` if not in model or model has no ZI.}
 #'   \item{`disp_par`}{Numeric scalar. Dispersion parameter. NB2 `phi`;
-#'     `1` for Poisson; `Inf` for Gaussian (unused); binomial `1`.}
+#'     `1` for Poisson; residual SD from `sigma(fit)` for Gaussian; binomial `1`.}
 #'   \item{`sigma_cond`}{Numeric scalar. SD of the plot-level random
 #'     intercept in the conditional/count component.}
 #'   \item{`sigma_zi`}{Numeric scalar. SD of the plot-level random intercept
