@@ -409,6 +409,18 @@ methods discussion of the paper, not as a code change.
   across the design grid, so one calibration per parameter set is enough.
 - Report that power estimates are conditional on the estimated variance
   structure and may be optimistic if the pilot is small.
+- **Check your distributional assumption before running monpwr.** Plot a
+  histogram of your response variable (faceted by plot or visit) and look
+  for excess zeros or a heavy right tail relative to the mean — both signal
+  overdispersion. Compute the variance-to-mean ratio (VMR) of counts per
+  group: VMR >> 1 indicates the Poisson assumption is violated. If
+  overdispersion is present, fit an NB2 model (or hurdle/ZIP) and pass that
+  to `extract_params()` rather than forcing Poisson. Experiment 8
+  (`Kea_survey/family_misspecification_experiment.R`) shows that ignoring
+  even mild overdispersion (VMR ~1.5) inflates power by ~13 pp, rising to
+  ~50 pp at strong overdispersion (VMR ~6). A quick `hist()` or
+  `var(y)/mean(y)` check before fitting is far cheaper than discovering
+  the family was wrong after a full power run.
 
 ### `calibrate_bias()` usage
 
