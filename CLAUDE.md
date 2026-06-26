@@ -463,6 +463,19 @@ In conditional mode, plot-specific future effort would be more realistic.
 This is a defensible simplification — document as a limitation if effort
 varies substantially across plots.
 
+### Family-matching assumption in validation
+
+All current validation experiments (Experiments 1–7 in
+`simr_extend_experiment.R`) generate ground-truth data from the **same**
+distributional family the monpwr test model assumes (Poisson-vs-Poisson in
+Experiments 1–4; NB2-vs-NB2 in Experiment 5). The accuracy claim is therefore
+scoped to the well-specified case — where the analyst's chosen family matches
+the true DGP. A family-misspecification cell (e.g. NB2 truth with Poisson
+test model) is outstanding. In that scenario, the misspecified Poisson test
+model is expected to over-reject (anticonservative), inflating power. This
+does not affect package code but should be acknowledged when interpreting
+validation results.
+
 ### Linear trend scope constraint
 
 `init_prospective_marginal()` strips `beta_visit * visit_num` to derive the
