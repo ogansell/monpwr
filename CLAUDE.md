@@ -312,6 +312,11 @@ Planned backlog (in priority order):
 6. Hybrid mode — plots absent from `plot_state` initialised from marginal baseline
 7. Stress test on a second dataset (bird counts, different family)
 8. `trend_fn` interface replacing scalar `eff_log` with a function over visit steps
+9. ~~`calibrate_bias()` rewrite~~ — **done** (rewritten to measure parametric
+   bias via pilot refit, mirroring Experiment 6)
+10. ~~`fit_and_test()` convergence handling~~ — **done** (benign warnings
+    muffled instead of discarded; `power_all` reported alongside conditioned
+    power)
 
 
 ## simr::extend() investigation — completed
@@ -407,16 +412,17 @@ methods discussion of the paper, not as a code change.
 
 ```r
 cal <- calibrate_bias(ref_params, n_plots = 30, n_visits = 7,
-                      effect_pct = 5, n_cal = 200)
-# => Bias: X percentage points (monpwr Y% vs truth Z%)
+                      effect_pct = 5, n_cal = 200, n_pilot = 15)
+# => Bias: X pp (monpwr Y% vs truth Z%) | pilot n_plots = 15
 ```
 
-Compares monpwr prospective power against a brute-force estimate at one
-design point. Both use the same extracted parameters and DGP — the only
-difference is that brute-force treats each replicate as independent while
-monpwr conditions on the fixed variance structure. The difference is the
-simulation-engine bias for that parameter set. Choose a design point where
-power is between 20–80% (not ceiling/floor) for a meaningful estimate.
+The truth arm uses the variance components in `ref_params` as known
+population values. The monpwr arm re-estimates variance from a fresh
+pilot of `n_pilot` plots each replicate (mirroring Experiment 6). The
+difference is the parametric bias from conditioning on noisy pilot
+estimates. It shrinks toward zero as `n_pilot` grows. Choose a design
+point where power is between 20–80% (not ceiling/floor) for a meaningful
+estimate.
 
 
 ## Known caveats for the paper
