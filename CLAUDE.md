@@ -172,9 +172,10 @@ and `conv_rate` from the stored/pooled p-values.
 
 Steps 1 and 2 differ:
 1. `init_prospective_marginal(ref_params, n_plots)` — all plots start at
-   `visit_num = 0` with LP set to the marginal baseline intercept, computed
-   on-the-fly from `plot_state` by stripping each plot's BLUP and accumulated
-   trend and averaging across plots:
+   `visit_num = 0` with LP set to the population-average linear predictor
+   at visit 0 (the marginal baseline), computed on-the-fly from `plot_state`
+   by stripping each plot's BLUP and accumulated trend and averaging across
+   plots:
    ```r
    marginal_int_cond = mean(eta_last_cond - blup_cond - beta_visit * visit_num)
    marginal_int_zi   = mean(eta_last_zi   - blup_zi)   # 0 if sigma_zi == 0
@@ -308,7 +309,7 @@ Planned backlog (in priority order):
 5. ~~Investigate `simr::extend()` behaviour with unbalanced data~~ — **done**
    (7 synthetic experiments in `Kea_survey/simr_extend_experiment.R`; see
    "simr::extend() investigation" section below)
-6. Hybrid mode — plots absent from `plot_state` initialised from marginal intercept
+6. Hybrid mode — plots absent from `plot_state` initialised from marginal baseline
 7. Stress test on a second dataset (bird counts, different family)
 8. `trend_fn` interface replacing scalar `eff_log` with a function over visit steps
 
@@ -465,7 +466,8 @@ varies substantially across plots.
 ### Linear trend scope constraint
 
 `init_prospective_marginal()` strips `beta_visit * visit_num` to derive the
-marginal intercept. This is correct when the time variable is a linear
+population-average linear predictor at visit 0 (the marginal baseline). This
+is correct when the time variable is a linear
 `visit_num` term. If the original model uses a non-linear time structure
 (e.g. `poly(Season, 2)`), the quadratic component would not be fully stripped.
 In practice this does not arise because `extract_params()` extracts the
