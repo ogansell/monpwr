@@ -101,14 +101,14 @@
 "_PACKAGE"
 
 ## usethis namespace: start
-#' @importFrom dplyr filter mutate select group_by summarise ungroup arrange left_join full_join bind_rows distinct pull slice_max slice_sample n n_distinct count first if_else transmute rename pick everything all_of
+#' @importFrom dplyr filter mutate select group_by summarise ungroup arrange left_join full_join bind_rows distinct pull slice_max slice_sample n n_distinct count first if_else transmute rename pick everything all_of any_of desc
 #' @importFrom tidyr expand_grid pivot_wider
 #' @importFrom purrr map map_dfr map_dbl pmap pmap_dfr walk
 #' @importFrom furrr future_pmap_dfr furrr_options
 #' @importFrom future plan multisession sequential
 #' @importFrom parallelly availableCores
 #' @importFrom rlang abort warn inform .data `%||%`
-#' @importFrom cli cli_alert_info cli_alert_warning cli_alert_success cli_h2 cli_bullets cli_progress_bar cli_progress_update cli_progress_done
+#' @importFrom cli cli_alert_info cli_alert_warning cli_alert_success cli_h2 cli_h3 cli_bullets cli_progress_bar cli_progress_update cli_progress_done
 #' @importFrom stats binom.test binomial family logLik median pchisq plogis poisson rbinom reorder rnbinom rnorm rpois sd setNames predict sigma
 #' @importFrom tibble tibble
 ## usethis namespace: end

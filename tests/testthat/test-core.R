@@ -309,6 +309,42 @@ test_that("calibrate_bias returns the expected fields", {
   expect_true(is.na(cal$bias) || (cal$bias >= -1 && cal$bias <= 1))
 })
 
+test_that("summary.monpwr_results flags low convergence and large gaps", {
+  res <- structure(
+    data.frame(
+      scenario = "s", label = "L", group = "All",
+      effect_pct = c(10, 20), horizon = c(10, 10),
+      n_plots = 50, n_future = 2,
+      power       = c(0.50, 0.90),
+      power_all   = c(0.49, 0.60),
+      conv_rate   = c(0.99, 0.65),
+      n_converged = c(198, 130),
+      stringsAsFactors = FALSE
+    ),
+    class = c("monpwr_results", "data.frame")
+  )
+  d <- summary(res, conv_threshold = 0.9, gap_threshold = 0.05)
+  expect_s3_class(d, "data.frame")
+  expect_true("gap" %in% names(d))
+  expect_equal(sum(d$flagged), 1)
+  expect_equal(round(d$gap[2], 2), 0.30)
+})
+
+test_that("summary.monpwr_results degrades gracefully without power_all", {
+  res <- structure(
+    data.frame(
+      scenario = "s", label = "L", group = "All",
+      effect_pct = 10, horizon = 10, n_plots = 50, n_future = 2,
+      power = 0.5, conv_rate = 0.8, n_converged = 160,
+      stringsAsFactors = FALSE
+    ),
+    class = c("monpwr_results", "data.frame")
+  )
+  d <- summary(res)
+  expect_true(is.na(d$gap[1]))
+  expect_true(d$flagged[1])
+})
+
 test_that("compute_mdc returns correct MDC when power target reached", {
   fake_results <- structure(
     data.frame(

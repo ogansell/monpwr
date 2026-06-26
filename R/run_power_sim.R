@@ -413,3 +413,92 @@ print.monpwr_results <- function(x, ...) {
   ))
   invisible(x)
 }
+
+
+#' Summarise a monpwr_results object, surfacing convergence and the power gap
+#'
+#' @description
+#' Prints a convergence-focused summary of a `monpwr_results` data frame and
+#' returns (invisibly) a per-cell diagnostic table.  Complements
+#' [print.monpwr_results()], which shows the design grid but not convergence.
+#'
+#' Two diagnostics are surfaced:
+#' * **Convergence rate** — the fraction of replicates whose test model
+#'   converged.  Low values mean power is estimated on a non-random subsample.
+#' * **Power gap** — `power - power_all`.  `power` conditions on convergence;
+#'   `power_all` treats non-converged replicates as non-significant (a
+#'   conservative floor).  A large gap means the convergence-conditioned power
+#'   is materially more optimistic than the floor.
+#'
+#' Cells are flagged when `conv_rate < conv_threshold` or
+#' `abs(power - power_all) > gap_threshold`.
+#'
+#' @param object A `monpwr_results` data frame from [run_power_sim()].
+#' @param conv_threshold Numeric scalar.  Flag cells below this convergence
+#'   rate.  Default 0.9.
+#' @param gap_threshold Numeric scalar.  Flag cells whose power gap exceeds
+#'   this in absolute value.  Default 0.05.
+#' @param ... Ignored.
+#'
+#' @return Invisibly, a data frame with one row per results cell and columns
+#'   `label`, `group`, `effect_pct`, `horizon`, `conv_rate`, `n_converged`,
+#'   `power`, `power_all`, `gap`, `flagged`.
+#'
+#' @seealso [print.monpwr_results()], [run_power_sim()], [calibrate_bias()]
+#' @export
+summary.monpwr_results <- function(object,
+                                   conv_threshold = 0.9,
+                                   gap_threshold  = 0.05,
+                                   ...) {
+  has_all  <- "power_all" %in% names(object)
+  has_conv <- "conv_rate" %in% names(object)
+
+  if (!has_all && !has_conv) {
+    warn(c(
+      "This results object predates convergence tracking.",
+      i = "Re-run with run_power_sim() >= the version that added power_all / conv_rate."
+    ))
+  }
+
+  diag <- object |>
+    mutate(
+      gap     = if (has_all) .data$power - .data$power_all else NA_real_,
+      flagged = (if (has_conv) .data$conv_rate < conv_threshold else FALSE) |
+                (if (has_all)  abs(.data$power - .data$power_all) > gap_threshold else FALSE)
+    ) |>
+    select(any_of(c("label", "group", "effect_pct", "horizon",
+                     "conv_rate", "n_converged", "power", "power_all",
+                     "gap", "flagged")))
+
+  cli::cli_h2("monpwr_results summary")
+
+  if (has_conv) {
+    cr <- object$conv_rate
+    cli::cli_bullets(c(
+      "*" = paste0("Convergence rate: min ", round(min(cr, na.rm = TRUE), 3),
+                   " | median ", round(stats::median(cr, na.rm = TRUE), 3),
+                   " | mean ", round(mean(cr, na.rm = TRUE), 3))
+    ))
+  }
+
+  n_flag <- sum(diag$flagged, na.rm = TRUE)
+  cli::cli_bullets(c(
+    "*" = paste0("Flagged cells:    ", n_flag, " of ", nrow(diag),
+                 " (conv < ", conv_threshold,
+                 if (has_all) paste0(" or |gap| > ", gap_threshold) else "", ")")
+  ))
+
+  if (n_flag > 0) {
+    flagged_tbl <- diag |>
+      filter(.data$flagged) |>
+      arrange(.data$conv_rate, desc(abs(.data$gap)))
+    cli::cli_h3("Flagged cells (worst first)")
+    print(as.data.frame(flagged_tbl), row.names = FALSE)
+  } else {
+    cli::cli_alert_success(
+      "No cells flagged: convergence adequate and power gap small throughout."
+    )
+  }
+
+  invisible(diag)
+}
