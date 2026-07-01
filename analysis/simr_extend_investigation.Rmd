@@ -1,0 +1,492 @@
+---
+title: "Investigating simr::extend() behaviour with unbalanced data"
+author: "Ollie Gansell"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 8,
+  fig.height = 5,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r packages}
+library(simr)
+library(lme4)
+library(monpwr)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(patchwork)
+
+theme_set(theme_minimal(base_size = 12))
+```
+
+## Overview
+
+`simr::extend()` is the standard way to extrapolate a fitted model to a larger
+design (more time points, more groups, etc.) before running `powerSim()`.
+Internally, `extend()` constructs the enlarged dataset by **cyclically recycling
+rows** from the original data.  With balanced data this produces a clean design.
+With unbalanced data — common in ecological monitoring — the recycled structure
+may not match any realistic design.
+
+This document tests `simr::extend()` across four increasingly messy data
+scenarios, comparing power estimates from three methods:
+
+1. **simr (naive)** — `powerSim()` on `extend()`-constructed data
+2. **simr (correct)** — `powerSim()` on a manually constructed balanced design
+3. **monpwr prospective** — `run_power_sim()` in prospective mode
+
+If (1) diverges from (2) and (3) while (2) and (3) agree, the problem is
+`extend()`'s recycling, not simr's simulation engine.
+
+
+## Known data-generating process
+
+All scenarios use the same DGP so true power is known. NB2 with random
+intercept — simple enough to be analytically tractable, complex enough to
+be realistic.
+
+```{r dgp-params}
+true_beta_visit <- -0.03
+true_intercept  <- 2.5
+true_sigma_plot <- 0.6
+true_phi        <- 1.5
+n_sims          <- 500
+alpha           <- 0.05
+effect_pct      <- -20
+n_extend        <- 10
+```
+
+```{r dgp-function}
+generate_data <- function(n_plots, visits_per_plot, beta_visit = true_beta_visit,
+                          intercept = true_intercept, sigma = true_sigma_plot,
+                          phi = true_phi) {
+  re <- rnorm(n_plots, 0, sigma)
+  expand.grid(
+    plot_id   = factor(seq_len(n_plots)),
+    visit_num = seq_len(visits_per_plot)
+  ) |>
+    mutate(
+      re    = re[as.integer(.data$plot_id)],
+      eta   = intercept + beta_visit * .data$visit_num + .data$re,
+      count = rnbinom(n(), size = phi, mu = exp(.data$eta))
+    )
+}
+```
+
+
+## Helper: three-way comparison
+
+```{r comparison-helper}
+run_comparison <- function(dat_original, dat_extended_naive,
+                           dat_extended_correct, n_plots, n_target_visits,
+                           scenario_label) {
+
+  # --- 1. simr (naive): extend()-constructed data ---
+  fit_naive <- glmer(count ~ visit_num + (1 | plot_id),
+                     data = dat_extended_naive, family = negative.binomial(true_phi))
+  fixef(fit_naive)["visit_num"] <- log(1 + effect_pct / 100)
+  pwr_naive <- simr::powerSim(fit_naive, test = simr::fixed("visit_num", method = "z"),
+                               nsim = n_sims, progress = FALSE)
+
+  # --- 2. simr (correct): manually balanced design ---
+  fit_correct <- glmer(count ~ visit_num + (1 | plot_id),
+                       data = dat_extended_correct, family = negative.binomial(true_phi))
+  fixef(fit_correct)["visit_num"] <- log(1 + effect_pct / 100)
+  pwr_correct <- simr::powerSim(fit_correct, test = simr::fixed("visit_num", method = "z"),
+                                 nsim = n_sims, progress = FALSE)
+
+  # --- 3. monpwr prospective ---
+  fit_orig <- glmer(count ~ visit_num + (1 | plot_id),
+                    data = as.data.frame(dat_original),
+                    family = negative.binomial(true_phi))
+  ref <- extract_params(fit_orig, data = as.data.frame(dat_original),
+                        visit_num_var = "visit_num",
+                        plotid_var = "plot_id", place_var = "plot_id")
+
+  scen <- list(
+    s = scenario(
+      label = scenario_label,
+      remeasure_yrs = 1,
+      site_selector = function(pm) unique(pm$plot_id)
+    )
+  )
+  pm <- data.frame(plot_id = as.character(unique(dat_original$plot_id)),
+                   stringsAsFactors = FALSE)
+
+  pwr_monpwr <- run_power_sim(
+    ref_params       = ref,
+    scenarios        = scen,
+    plot_metadata    = pm,
+    mode             = "prospective",
+    effect_sizes_pct = abs(effect_pct),
+    horizons         = n_target_visits,
+    n_iter           = n_sims,
+    alpha            = alpha,
+    test             = "wald",
+    place_var        = "plot_id",
+    workers          = 1L
+  )
+
+  summ_naive   <- summary(pwr_naive)
+  summ_correct <- summary(pwr_correct)
+
+  tibble(
+    scenario = scenario_label,
+    method   = c("simr_naive", "simr_correct", "monpwr_prospective"),
+    power    = c(summ_naive$mean,  summ_correct$mean,  pwr_monpwr$power[1]),
+    lower    = c(summ_naive$lower, summ_correct$lower, pwr_monpwr$power_lower[1]),
+    upper    = c(summ_naive$upper, summ_correct$upper, pwr_monpwr$power_upper[1])
+  )
+}
+```
+
+
+---
+
+## Scenario 1: Balanced data (validation baseline)
+
+Equal number of plots at every time point. All three methods should agree.
+If they don't, the test harness has a bug.
+
+```{r scenario-1-data}
+n_plots_s1  <- 50
+n_visits_s1 <- 5
+
+set.seed(42)
+dat_s1 <- generate_data(n_plots_s1, n_visits_s1)
+```
+
+### Inspect original data structure
+
+```{r scenario-1-structure}
+dat_s1 |> count(visit_num) |> knitr::kable(caption = "Rows per visit — original")
+```
+
+### Apply simr::extend()
+
+```{r scenario-1-extend}
+fit_s1 <- glmer(count ~ visit_num + (1 | plot_id),
+                data = dat_s1, family = negative.binomial(true_phi))
+
+fit_s1_ext <- simr::extend(fit_s1, along = "visit_num", n = n_extend)
+dat_s1_naive <- simr::getData(fit_s1_ext)
+
+dat_s1_naive |> count(visit_num) |>
+  knitr::kable(caption = "Rows per visit — after extend()")
+```
+
+### Manually construct balanced design
+
+```{r scenario-1-manual}
+set.seed(142)
+dat_s1_correct <- generate_data(n_plots_s1, n_extend)
+```
+
+### Compare power
+
+```{r scenario-1-power}
+results_s1 <- run_comparison(dat_s1, dat_s1_naive, dat_s1_correct,
+                             n_plots_s1, n_extend, "Balanced")
+results_s1 |> knitr::kable(digits = 3, caption = "Scenario 1: Balanced")
+```
+
+
+---
+
+## Scenario 2: Missing visits (random dropout)
+
+Start balanced, then randomly drop ~20% of plot-visit combinations.
+Questions:
+
+- Does `extend()` recycle the gaps?
+- Does the extended dataset have systematic missingness patterns?
+
+```{r scenario-2-data}
+set.seed(43)
+dat_s2_full <- generate_data(n_plots_s1, n_visits_s1)
+
+drop_frac <- 0.20
+drop_idx  <- sample(nrow(dat_s2_full), size = floor(nrow(dat_s2_full) * drop_frac))
+dat_s2    <- dat_s2_full[-drop_idx, ]
+```
+
+### Inspect original data structure
+
+```{r scenario-2-structure}
+dat_s2 |> count(visit_num) |> knitr::kable(caption = "Rows per visit — after dropout")
+dat_s2 |> count(plot_id) |> summarise(min = min(n), max = max(n), mean = mean(n)) |>
+  knitr::kable(caption = "Visits per plot — after dropout")
+```
+
+### Apply simr::extend()
+
+```{r scenario-2-extend}
+fit_s2 <- glmer(count ~ visit_num + (1 | plot_id),
+                data = dat_s2, family = negative.binomial(true_phi))
+
+fit_s2_ext <- simr::extend(fit_s2, along = "visit_num", n = n_extend)
+dat_s2_naive <- simr::getData(fit_s2_ext)
+
+dat_s2_naive |> count(visit_num) |>
+  knitr::kable(caption = "Rows per visit — after extend()")
+```
+
+### Diagnose recycling pattern
+
+```{r scenario-2-diagnose}
+original_counts <- dat_s2 |> count(visit_num, name = "n_orig")
+extended_counts <- dat_s2_naive |> count(visit_num, name = "n_ext")
+
+full_join(original_counts, extended_counts, by = "visit_num") |>
+  knitr::kable(caption = "Original vs extended row counts per visit")
+```
+
+### Construct balanced target design
+
+```{r scenario-2-manual}
+set.seed(143)
+dat_s2_correct <- generate_data(n_plots_s1, n_extend)
+```
+
+### Compare power
+
+```{r scenario-2-power}
+results_s2 <- run_comparison(dat_s2, dat_s2_naive, dat_s2_correct,
+                             n_plots_s1, n_extend, "Missing visits")
+results_s2 |> knitr::kable(digits = 3, caption = "Scenario 2: Missing visits")
+```
+
+
+---
+
+## Scenario 3: Unequal plots per time point (programme growth)
+
+The programme grew over time: 30 plots in year 1, increasing to 80 by year 5.
+This is the pattern observed in the kea data. `extend()` cycles these unequal
+counts across the extended time points, producing a design no real programme
+would implement.
+
+```{r scenario-3-data}
+set.seed(44)
+plots_per_year <- c(30, 45, 60, 70, 80)
+n_plots_s3     <- max(plots_per_year)
+
+re_s3 <- rnorm(n_plots_s3, 0, true_sigma_plot)
+
+dat_s3 <- map2_dfr(plots_per_year, seq_along(plots_per_year), function(np, yr) {
+  data.frame(
+    plot_id   = factor(seq_len(np), levels = seq_len(n_plots_s3)),
+    visit_num = as.integer(yr),
+    re        = re_s3[seq_len(np)],
+    stringsAsFactors = FALSE
+  ) |>
+    mutate(
+      eta   = true_intercept + true_beta_visit * .data$visit_num + .data$re,
+      count = rnbinom(n(), size = true_phi, mu = exp(.data$eta))
+    )
+})
+```
+
+### Inspect original data structure
+
+```{r scenario-3-structure}
+dat_s3 |> count(visit_num) |> knitr::kable(caption = "Rows per visit — growing programme")
+```
+
+### Apply simr::extend()
+
+```{r scenario-3-extend}
+fit_s3 <- glmer(count ~ visit_num + (1 | plot_id),
+                data = dat_s3, family = negative.binomial(true_phi))
+
+fit_s3_ext <- simr::extend(fit_s3, along = "visit_num", n = n_extend)
+dat_s3_naive <- simr::getData(fit_s3_ext)
+
+dat_s3_naive |> count(visit_num) |>
+  knitr::kable(caption = "Rows per visit — after extend()")
+```
+
+### Diagnose recycling pattern
+
+```{r scenario-3-diagnose}
+original_counts <- dat_s3 |> count(visit_num, name = "n_orig")
+extended_counts <- dat_s3_naive |> count(visit_num, name = "n_ext")
+
+full_join(original_counts, extended_counts, by = "visit_num") |>
+  knitr::kable(caption = "Original vs extended — note the cyclic recycling")
+
+ggplot(dat_s3_naive |> count(visit_num), aes(visit_num, n)) +
+  geom_col(fill = "steelblue", alpha = 0.7) +
+  geom_hline(yintercept = n_plots_s3, linetype = "dashed", colour = "red") +
+  labs(title = "Rows per visit after extend()",
+       subtitle = "Dashed line = target n if programme stayed at final size",
+       y = "n rows", x = "visit_num")
+```
+
+### Construct balanced target design
+
+The intended future design is all 80 plots at every time point.
+
+```{r scenario-3-manual}
+set.seed(144)
+dat_s3_correct <- generate_data(n_plots_s3, n_extend)
+```
+
+### Compare power
+
+```{r scenario-3-power}
+results_s3 <- run_comparison(dat_s3, dat_s3_naive, dat_s3_correct,
+                             n_plots_s3, n_extend, "Unequal plots/time")
+results_s3 |> knitr::kable(digits = 3, caption = "Scenario 3: Unequal plots per time")
+```
+
+
+---
+
+## Scenario 4: Repeat surveys within visits
+
+Multiple observations per plot-visit (e.g. 3 point counts per site-year).
+Question: does `extend()` replicate the within-visit nesting correctly, or
+does it break the structure?
+
+```{r scenario-4-data}
+set.seed(45)
+n_plots_s4        <- 40
+n_visits_s4       <- 5
+repeats_per_visit <- 3
+
+re_s4 <- rnorm(n_plots_s4, 0, true_sigma_plot)
+
+dat_s4 <- expand.grid(
+  plot_id   = factor(seq_len(n_plots_s4)),
+  visit_num = seq_len(n_visits_s4),
+  rep       = seq_len(repeats_per_visit)
+) |>
+  mutate(
+    re    = re_s4[as.integer(.data$plot_id)],
+    eta   = true_intercept + true_beta_visit * .data$visit_num + .data$re,
+    count = rnbinom(n(), size = true_phi, mu = exp(.data$eta))
+  )
+```
+
+### Inspect original data structure
+
+```{r scenario-4-structure}
+dat_s4 |> count(visit_num) |> knitr::kable(caption = "Rows per visit (3 reps each)")
+dat_s4 |> distinct(plot_id, visit_num) |> count(visit_num) |>
+  knitr::kable(caption = "Unique plots per visit")
+```
+
+### Apply simr::extend()
+
+```{r scenario-4-extend}
+fit_s4 <- glmer(count ~ visit_num + (1 | plot_id),
+                data = dat_s4, family = negative.binomial(true_phi))
+
+fit_s4_ext <- simr::extend(fit_s4, along = "visit_num", n = n_extend)
+dat_s4_naive <- simr::getData(fit_s4_ext)
+
+dat_s4_naive |> count(visit_num) |>
+  knitr::kable(caption = "Rows per visit — after extend()")
+dat_s4_naive |> distinct(plot_id, visit_num) |> count(visit_num) |>
+  knitr::kable(caption = "Unique plots per visit — after extend()")
+```
+
+### Diagnose nesting
+
+```{r scenario-4-diagnose}
+dat_s4_naive |>
+  count(plot_id, visit_num, name = "n_reps") |>
+  count(n_reps, name = "n_cells") |>
+  knitr::kable(caption = "Distribution of reps per plot-visit after extend()")
+```
+
+### Construct balanced target design
+
+```{r scenario-4-manual}
+set.seed(145)
+dat_s4_correct <- expand.grid(
+  plot_id   = factor(seq_len(n_plots_s4)),
+  visit_num = seq_len(n_extend),
+  rep       = seq_len(repeats_per_visit)
+) |>
+  mutate(
+    re    = re_s4[as.integer(.data$plot_id)],
+    eta   = true_intercept + true_beta_visit * .data$visit_num + .data$re,
+    count = rnbinom(n(), size = true_phi, mu = exp(.data$eta))
+  )
+```
+
+### Compare power
+
+```{r scenario-4-power}
+results_s4 <- run_comparison(dat_s4, dat_s4_naive, dat_s4_correct,
+                             n_plots_s4, n_extend, "Repeat surveys")
+results_s4 |> knitr::kable(digits = 3, caption = "Scenario 4: Repeat surveys")
+```
+
+
+---
+
+## Summary
+
+```{r summary-table}
+all_results <- bind_rows(results_s1, results_s2, results_s3, results_s4)
+all_results |> knitr::kable(digits = 3, caption = "Three-way power comparison across scenarios")
+```
+
+```{r summary-plot, fig.width = 10, fig.height = 5}
+ggplot(all_results, aes(x = method, y = power, colour = method)) +
+  geom_pointrange(aes(ymin = lower, ymax = upper), size = 0.8) +
+  facet_wrap(~ scenario, nrow = 1) +
+  scale_colour_brewer(palette = "Set2") +
+  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+  labs(title = "Power estimates: simr (naive extend) vs simr (correct design) vs monpwr",
+       x = NULL, y = "Power") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1),
+        legend.position = "none")
+```
+
+### Key findings
+
+- **Scenario 1 (balanced):** All three methods should agree, confirming the
+  harness is valid.
+- **Scenario 2 (missing visits):** If `extend()` recycles the gap pattern,
+  the naive simr estimate may diverge from the correct-design and monpwr
+  estimates.
+- **Scenario 3 (unequal plots/time):** The kea-data pattern. `extend()`
+  cycles the unequal row counts, producing a design that no real programme
+  would implement. This is where the largest divergence is expected.
+- **Scenario 4 (repeat surveys):** Tests whether `extend()` preserves the
+  within-visit nesting structure. Broken nesting would inflate sample size
+  and bias power upward.
+
+### Implications for the paper
+
+The framing: `extend()` — the standard convenience function — creates a data
+structure that may not match the user's intended design when the original data
+is unbalanced. `simr` itself produces correct results when given a properly
+constructed balanced design matrix. The issue is usability, not correctness.
+
+
+---
+
+## Session info
+
+```{r session-info}
+sessionInfo()
+```
