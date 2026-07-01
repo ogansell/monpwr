@@ -373,6 +373,72 @@ original data is unbalanced. simr produces correct results when given a
 properly constructed balanced design matrix. The issue is usability, not
 correctness.
 
+## simr::extend() — per-cell structure (refinement to ESS-ratio finding)
+
+The ESS-ratio diagnostic (`nrow(extended) / (n_units × n_target_visits)`)
+is necessary but **not sufficient**. It is an aggregate: it measures whether
+the *total* simulation effort matches the intended design, but not how that
+effort is *distributed* across unit × time cells.
+
+On real kea data the ESS ratios were benign (0.89–1.08 across 10/30/50 plots),
+which initially read as "structural bias is mild here." Inspecting the per-cell
+counts (`table(year_seq, tile)` on the extended data) showed this was
+misleading. `extend(along = "year_seq", n = 10)` recycles the 5-year pilot
+block to fill 10 years **per unit, including its gaps and pile-ups**. Example
+(one tile, rows per year 1–10): `4, 5, 3, 0, 14, 4, 5, 3, 0, 14`. The pilot's
+uneven survey effort — and its structural zeros — are duplicated, not smoothed.
+So a tile unobserved in pilot year 3 is also unobserved in extended year 8, by
+construction, while a heavily-surveyed tile-year is pseudo-replicated 14-fold.
+
+**Key point: aggregate effort matched the intended design while the per-cell
+structure did not.** The intended design is one row per tile-year (a balanced
+panel); simr's extended design ranged 0–14 rows per cell. The ESS ratio cannot
+see this because the over- and under-filled cells roughly cancel in the total.
+
+### Why this strengthens, not weakens, the framing
+
+This is the "usability, not correctness" point in sharper form. `extend()` is
+doing documented behaviour (recycling the pilot structure). The issue is that:
+
+1. The resulting design departs substantially from what the user intended at
+   the **per-unit** level, even when totals look right.
+2. The standard quick check (row count / ESS ratio) does not reveal it.
+3. Recycling propagates the pilot's *missingness* structurally, not randomly —
+   gaps reappear at fixed intervals.
+
+A simr user who supplies a balanced one-row-per-unit-per-time design (the
+"thinned" arm) avoids all of this. The finding is about the interaction of
+`extend()` with unbalanced pilot input, plus the inadequacy of aggregate
+diagnostics — not about simr being wrong.
+
+### Diagnostic
+
+Use `design_balance_diagnostic()` / `design_balance_heatmap()`
+(`R/design_balance.R` or the analysis-script helper) rather than the ESS ratio
+alone. Report **`cv_per_cell`** (SD/mean of per-cell row counts over all
+possible cells; 0 = balanced), **`prop_empty`** (fraction of unit × time cells
+with no rows), and **`max_per_cell`** (worst pseudo-replication) alongside the
+ESS ratio. The divergence between a near-1 ESS ratio and a large `cv_per_cell`
+/ `prop_empty` is itself the result worth reporting.
+
+### Paper framing
+
+Replace or supplement the ESS-ratio panel with a per-cell heatmap (unit × time,
+fill = row count) and the `cv_per_cell` / `prop_empty` numbers. One sentence
+should make the general point explicit: aggregate effort measures can look
+healthy while within-unit structure is badly distorted, so per-cell balance
+must be checked directly. This nuance is a contribution in its own right —
+our own analysis initially under-read the distortion because the ESS ratio
+looked fine.
+
+### Methodological honesty note
+
+The earlier write-up's characterisation of kea structural bias as "mild" was
+based on the ESS ratio and is **superseded** by this per-cell finding. The
+aggregate bias is mild; the per-cell distortion is not. Keep both statements —
+they are not contradictory, but the per-cell one is the one that affects
+variance-component estimation and therefore power.
+
 
 ## Parameter estimation uncertainty
 
